@@ -4,3 +4,6 @@ seaborn
 matplotlib
 scikit-learn
 streamlit
+
+# Testing packages
+pytest
