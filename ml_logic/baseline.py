@@ -33,8 +33,8 @@ class ClassicalModel:
 
     def fit(
         self,
-        time: List[float],
-        logC: List[float],
+        x: List[float],
+        y: List[float],
         model: str = "linear",
     ) -> None:
         """
@@ -61,8 +61,8 @@ class ClassicalModel:
             such as bacterial load at t=0 is 1 cfu (log t0 = 0)
 
         """
-        x = np.asarray(time, dtype=float)
-        y = np.asarray(logC, dtype=float)
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
 
         if x.shape != y.shape:
             raise ValueError("time and logC should have the same length")
@@ -346,5 +346,56 @@ class ClassicalModel:
 class FullClassicalModel:
     """
     Docstring for FullClassicalModel
-    Creates a full classical model, combining pri
+    Creates a full classical model, combining primary and scondary models
+    FullClassicalModel model
+        - FullClassicalModel() : creates an instance of a classical model
+        - .fit() : "training" : identifies model parameters
+        - .predict() : predicts bacterial load LogC = f(time)
+        - .params : dict of the primary and secondary model type and parameters
+            params = {
+                'primary': {'type': str
+                            'params': {
+                                'parameter1': value.
+                                'parameter2': value,
+                                ...
+                                }
+                            },
+                'secondary': {'parameter': value}
+                }
     """
+
+    def __init__(self) -> None:
+        """
+        Docstring for __init__
+        ClassicalModel() : creates an instance of a classical model
+        """
+        self.params: dict | None = None
+
+
+    def fit(
+        self,
+        data: List[float],
+        logC: List[float],
+        model: str = "linear",
+    ) -> None:
+        """
+        Docstring for fit
+
+        :param self: Description
+        :param data: Description
+        :type data: List[float]
+        :param logC: Description
+        :type logC: List[float]
+        :param model: Description
+        :type model: str
+        """
+
+        pass
+
+    def predict(self, x: Union[float, List[float]]) -> Union[float, List[float]]:
+        """
+        Docstring for predict
+
+        """
+
+        pass
