@@ -340,3 +340,11 @@ class ClassicalModel:
         if np.isscalar(x):
             return float(y_pred)
         return y_pred.tolist()
+
+
+
+class FullClassicalModel:
+    """
+    Docstring for FullClassicalModel
+    Creates a full classical model, combining pri
+    """
