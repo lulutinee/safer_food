@@ -1,0 +1,10 @@
+"""
+Docstring for interface.explanations
+Gives explanation about the risks depending on the predictions made on the user's
+food
+"""
+
+
+
+#notes : utiliser LangChain pour transformer nos sources en embeddings, puis
+#faire la génération de texte. Voir challenges et leçons Gen IA, RAG 13 janvier
