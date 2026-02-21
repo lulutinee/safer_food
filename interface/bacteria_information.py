@@ -1,15 +1,19 @@
 """
 Thresholds for the different microorganims
-Structure : dict {'<bacteria code>': {
-    'usual_name': '<usual name of the microorganism>,
-    'quality_threshold': <concentration in log cfu/g or /ml inducing quality change,
-    'danger_threshold': <infectious dose in log cfu/g or /ml for an healthy adult>
-    }}
+Structure : dict {
+        '<bacteria code>': {
+        'usual_name': 'Escherichia coli',   # usual name of the bacteria
+        'initial': -1.4,                    # expected initial load on commercial foods (log cfu/g /ml)
+        'raw': -2,                          # maximum load acceptable for raw consumption
+        'medium': -2,                       # maximum load acceptable for products if they are cooked at medium temperature
+        'fried': -2                         # maximum load acceptable for products if they are coocked at high temperature
+    }
 
-Data on infectious dose are from Health Canada pathogen safety data and MAPAQ (for total flora)
+For pathogens : Data on infectious dose are from Health Canada pathogen safety data
+For spoilage (total aerobic mesophilic) : MAPAQ (CUMAIRA)
 Amount of food ingested is considered to be 1 kg or 1 L (1e3 g), Infectious dose is calculated
 on this amount of food
-Initial bacterial load for pathogens is considered to be "absent in 25g" = 39 for 1e3 g of food = -1.4 log
+Initial bacterial load for pathogens is considered to be "absent in 25g" = 39 cfu for 1e3 g of food = -1.4 log for Listeria and Salmonella, "1 in 1 kg" for E. coli
 """
 
 #Pathogens infectious dose Source : Health Canada (HC)
@@ -29,7 +33,7 @@ MICROORGANISM = {
         'fried': 4
     },
     'ss': {
-        'usual_name': 'Salmonella',
+        'usual_name': 'Salmonella enterica',
         'initial': -1.4,
         'raw': 1,
         'medium': 1,
@@ -37,7 +41,7 @@ MICROORGANISM = {
     },
     'ec': {
         'usual_name': 'Escherichia coli',
-        'initial': -1.4,
+        'initial': -3,
         'raw': -2,
         'medium': -2,
         'fried': -2
