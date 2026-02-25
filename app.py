@@ -6,6 +6,8 @@ SaferFood front-end
 import streamlit as st
 import matplotlib.pyplot as plt
 from interface.inference import infer
+from interface import explanations
+from interface import recipes
 
 st.set_page_config(page_title="SaferFood", layout="centered")
 
@@ -43,6 +45,16 @@ for h in range(0, 24):
 for d in range(1, 22):
     STORAGE_TIMES[f"{d} d"] = d * 24
 
+
+# Default values (will be infered from user input)
+is_safe = None
+bacterias = None
+final_logC = None
+cooking_reco = None
+times = None
+logCs = None
+fig = None
+ax = None
 
 tab_prediction, tab_explanations, tab_recipes = st.tabs(
     ["Prediction", "Explanations", "Recipes"]
@@ -103,13 +115,21 @@ with tab_prediction:
             }
 
             results = infer(params=params)
+            is_safe = results.get('is_safe')
+            bacterias = results.get('bacterias')
+            cooking_reco = results.get('cooking_reco')
+            fig = results.get('fig')
 
-            if results.get("is_safe") is True:
+            if is_safe is True:
                 st.markdown("# YOUR FOOD IS SAFE TO EAT !")
             else:
                 st.markdown("# YOUR FOOD IS UNSAFE TO EAT !")
+                st.markdown('There is a risk of:')
+                st.markdown("\n".join(f"- {bacteria}" for bacteria in bacterias))
 
-            fig = results.get("fig")
+            if cooking_reco is not None:
+                st.markdown(f'Given our predictions, the recommended cooking temperature for your {matrixID} is: {cooking_reco}')
+
             if fig is not None:
                 st.pyplot(fig)
             else:
@@ -125,6 +145,9 @@ with tab_explanations:
 - Model caveats and proper food safety guidance
 """
     )
+    if bacterias is not None:
+        explanations = explanations.risk_explanation(bacterias, max_output_tokens=2000)
+        st.markdown(explanations)
 
 with tab_recipes:
     st.header("Recipes")
@@ -135,3 +158,8 @@ with tab_recipes:
 - Or show safe-handling / cooking tips
 """
     )
+
+    if cooking_reco is not None:
+        st.markdown(f'Given our predictions, the recommended cooking temperature for your {matrixID} is: {cooking_reco}')
+        recipes = recipes.recipe_suggestion(ingredient=matrixID, cooking=cooking_reco, provider='auto', max_output_tokens=5000)
+        st.markdown(recipes)

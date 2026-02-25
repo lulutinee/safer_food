@@ -1,7 +1,7 @@
 """
 Thresholds for the different microorganims
 Structure : dict {
-        '<bacteria code>': {
+        '<bacteria code>': {                # bacteria code (ss = salmonella, ec : E. coli, lm : Listeria monocytogenes, etc.)
         'usual_name': 'Escherichia coli',   # usual name of the bacteria
         'initial': -1.4,                    # expected initial load on commercial foods (log cfu/g /ml)
         'raw': -2,                          # maximum load acceptable for raw consumption
@@ -30,27 +30,27 @@ MICROORGANISM = {
         'initial': -1.4,
         'raw': 4,
         'medium': 4,
-        'fried': 4
+        'high': 4
     },
     'ss': {
         'usual_name': 'Salmonella enterica',
         'initial': -1.4,
         'raw': 1,
         'medium': 1,
-        'fried': 1
+        'high': 1
     },
     'ec': {
         'usual_name': 'Escherichia coli',
         'initial': -3,
         'raw': -2,
         'medium': -2,
-        'fried': -2
+        'high': -2
     },
     'ta': {
         'usual_name': 'Total bacteria (aerobic mesophilic)',
         'initial': 4,
         'raw': 7,
         'medium': 8,
-        'fried': 9
+        'high': 9
     }
 }
