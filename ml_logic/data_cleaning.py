@@ -4,6 +4,19 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
+from sklearn.model_selection import TimeSeriesSplit
+from typing import Dict, List, Tuple, Sequence
+from sklearn.model_selection import train_test_split, GroupShuffleSplit
+from sklearn.preprocessing import FunctionTransformer
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import make_pipeline
+from sklearn.compose import make_column_transformer
+from scipy.interpolate import interp1d
+from tensorflow import keras
+from keras.preprocessing.sequence import pad_sequences
+from scipy.interpolate import PchipInterpolator
+from keras.layers import Masking
+from keras import models, layers, Input, optimizers, metrics, Sequential
 
 def import_data():
     conditions = pd.read_csv('../raw_data/Conditions.txt', sep='\t')
@@ -29,20 +42,19 @@ def merge_data(conditions, experiment_conditions, experiments, logcs, properties
                            ).drop(columns=['ID_y']
                                   ).rename(columns={'ID_x': 'ResponseID'})
     # data = data.merge(experiment_conditions_pivot, on='ExperimentID', how='left')
-    data = data.merge(response_properties, on='ResponseID', how='left'
-                      ).rename(columns={'Value_x': 'ResponseValue',
-                                        'Value_y': 'ResponsePropertiesValue'})
+    # data = data.merge(response_properties, on='ResponseID', how='left'
+    #                  ).rename(columns={'Value_x': 'ResponseValue',
+    #                                    'Value_y': 'ResponsePropertiesValue'})
     data = data.merge(logcs, on='ResponseID', how='right')
 
     return data
 
-def select_dataset(df, min_time_threshold=5, max_time_threshold=504):
-    # Remove data points where the maximum time exceeds a certain treshold
-    filtered_df = df[(df['TObs'] >= min_time_threshold) & (df['TObs'] <= max_time_threshold)]
+def clean_data(df, min_time_threshold=10, max_time_threshold=504, min_temp_threshold=0, max_temp_threshold=30):
+    # Keep ResponseIDs with at least 10 time points and a maximum time of 504 hours (21 days)
+    response_counts = df.groupby('ResponseID').size()
+    valid_response_ids = response_counts[response_counts >= 10].index
+    df = df[df['ResponseID'].isin(valid_response_ids)]
 
-    return filtered_df
-
-def clean_data(df, min_time_threshold=5, max_time_threshold=504, min_temp_threshold=0, max_temp_threshold=30):
     # Remove data points where the maximum time exceeds a certain treshold
     df = df[(df['TObs'] >= min_time_threshold) & (df['TObs'] <= max_time_threshold)]
 
@@ -50,8 +62,12 @@ def clean_data(df, min_time_threshold=5, max_time_threshold=504, min_temp_thresh
     df = df[(df['Temperature'] >= min_temp_threshold) & (df['Temperature'] <= max_temp_threshold)]
 
     # Keep data from specific matrices only
-    food_matrices = ['beef', 'poultry', 'produce', 'seafood', 'pork']
-    df = df[df['MatrixID'].isin(food_matrices)].reset_index()
+    food_matrices = ['beef', 'poultry', 'seafood', 'pork']
+    df = df[df['MatrixID'].isin(food_matrices)]
+
+    # Keep data from specific organisms only
+    organisms = ['ec', 'lm', 'ss']
+    df = df[df['OrganismID'].isin(organisms)].reset_index()
 
     # Fill missing values in the DataFrame based on the provided fill_values
     # dictionary
@@ -123,9 +139,9 @@ def clean_data(df, min_time_threshold=5, max_time_threshold=504, min_temp_thresh
     # Drop columns that are not needed for the analysis.
     columns_to_drop = ['Spec_rate', 'RateMethod', 'Logc0', 'CombaseID_x',
                        'heated', 'OrganismSpecification', 'Comment', 'Ph', 'Aw',
-                       'Value_x', 'ComBaseID_x', 'ComBaseID_y', 'UserId',
+                       'Value_x', 'ComBaseID', 'ComBaseID_y', 'UserId',
                        'Assumed', 'index', 'ExperimentID', 'LinkId', 'SourceID',
-                       'MethodID']
+                       'MethodID', 'ID', 'TObs', 'LogcVar']
 
     for column, value in fill_values.items():
         if column in df.columns:
@@ -136,4 +152,143 @@ def clean_data(df, min_time_threshold=5, max_time_threshold=504, min_temp_thresh
 
     return df
 
+def split_dataset(df):
+    # 1. Define the splitter (80% train, 20% test)
+    gss = GroupShuffleSplit(n_splits=1, train_size=0.8, random_state=42)
 
+    # 2. Split based on Experiment_ID
+    # This returns indices for the unique groups
+    train_idx, test_idx = next(gss.split(df, groups=df['ResponseID']))
+
+    # 3. Create the actual dataframes
+    df_train = df.iloc[train_idx]
+    df_test = df.iloc[test_idx]
+
+    return df_train, df_test
+
+def data_engineering(df):
+    # Calculate time delta for each ResponseID from the last time point
+    df['Time_delta'] = df.groupby('ResponseID')['Time'].diff().fillna(0)
+
+    # Calculate log delta for each ResponseID from the last time point
+    df['log_delta'] = df.groupby('ResponseID')['Value'].diff().fillna(0)
+
+    # Calculate time difference between T0 and TObs for each ResponseID
+    df['Time_diff'] = df.groupby('ResponseID')['Time'].transform(lambda x: x - x.min()).round(0)
+
+    # Calculate log difference between T0 and TObs for each ResponseID
+    df['log_diff'] = df.groupby('ResponseID')['Value'].transform(lambda x: x - x.min())
+
+    df.drop(columns=['In_on'],
+            inplace=True)
+
+    indices_to_drop = df[df['Time'] == 0].index
+    df.drop(indices_to_drop, inplace=True)
+
+    return df
+
+def data_preproc(df,train_df):
+
+    # Select only numerical columns for scaling
+    numerical_cols = df.drop(columns=['ResponseID', 'Time_diff']).select_dtypes(include=['float64', 'int64']).columns
+    #numerical_cols = ['Time', 'Temperature']
+
+    # Scale numerical features using MinMaxScaler
+    scaler = MinMaxScaler()
+    scaler.fit(train_df[numerical_cols])
+    df[numerical_cols] = scaler.transform(df[numerical_cols])
+
+    # One-hot encode categorical features
+    categorical_cols = df.select_dtypes(include=['object']).columns
+    #categorical_cols = ['MatrixID']
+    ohe = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+    ohe.fit(df[categorical_cols])
+    df[ohe.get_feature_names_out()] = ohe.transform(df[categorical_cols])
+    df = df.drop(columns=categorical_cols)
+
+    # Combine scaled numerical features with one-hot encoded categorical features
+    #df = pd.concat([df['ResponseID'], df[numerical_cols].reset_index(drop=True), encoded_cat_df.reset_index(drop=True)], axis=1)
+
+    return df
+
+def interpolate(df):
+    master_time_grid = np.arange(0, 504, 1)
+
+    processed_data = []
+
+    for response_id, group in engineered_df.groupby('ResponseID'):
+        # 1. Ensure data is sorted by time (Crucial for PCHIP)
+        group = group.sort_values('Time_diff')
+
+        # 2. Drop duplicates (PCHIP fails if two points have the same time)
+        group = group.drop_duplicates(subset=['Time_diff'])
+
+        # 3. Get raw values as NumPy arrays
+        x_sparse = group['Time_diff'].values
+        y_sparse = group['log_diff'].values
+
+        # Safety Check: We need at least 2 points to interpolate
+        if len(x_sparse) < 2:
+            continue
+
+        # 4. Create the Interpolator Object
+        # PCHIP is "shape-preserving" and won't overshoot your growth data
+        interp_func = PchipInterpolator(x_sparse, y_sparse)
+
+        # 5. Define points to calculate (only up to the end of this specific experiment)
+        max_time = x_sparse.max()
+        valid_grid_points = master_time_grid[master_time_grid <= max_time]
+
+        # 6. Generate the new values
+        y_interp = interp_func(valid_grid_points)
+
+        # Rebuild the dataframe for this sequence
+        temp_df = pd.DataFrame({
+            'ResponseID': response_id,
+            'Time_diff': valid_grid_points,
+            'log_diff': y_interp,
+            'Temperature': group['Temperature'].iloc[0], # Static feature
+            'MatrixID': group['MatrixID'].iloc[0],  # Static feature
+            'OrganismID': group['OrganismID'].iloc[0]   # Static feature
+        })
+
+        processed_data.append(temp_df)
+
+    final_df = pd.concat(processed_data, ignore_index=True)
+
+    return final_df
+
+def pad_data(df):
+    # We calculate max per group for Y
+    y_values = df.groupby('ResponseID')['log_diff'].max().values.reshape(-1, 1)
+
+    # 3. Building X Sequences
+    X_list = []
+    # It's vital to iterate through the groups in the same order as we did for Y
+    for x_id in df['ResponseID'].unique():
+        group = df[df['ResponseID'] == x_id]
+        # Features: Time, Temp, and the encoded Food Matrix
+        features = group[['Time_diff', 'Temperature', 'MatrixID_beef',
+                        'MatrixID_pork', 'MatrixID_poultry', 'MatrixID_seafood',
+                        'OrganismID_ec', 'OrganismID_lm', 'OrganismID_ss']].values
+        X_list.append(features)
+
+    # 4. Padding X
+    X_padded = pad_sequences(X_list, padding='post', dtype='float32', value=1000)
+
+    return X_padded, y_values
+
+def initialize_model():
+    model = Sequential()
+    model.add(Input(shape=X_train.shape[1:])) # input shape is (input_length, n_features)
+    model.add(layers.Masking(mask_value=1000))
+    model.add(layers.LSTM(64,return_sequences=False))
+    model.add(layers.Dense(32, activation='relu'))
+    model.add(layers.Dense(1, activation='linear'))
+
+    return model
+
+def compile_model(model):
+    model.compile(loss='mae',
+                optimizer='adam')
+    return model
