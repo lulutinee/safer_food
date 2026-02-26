@@ -91,9 +91,9 @@ class ClassicalModel:
         """
         Docstring for predict
         Primary models :
-            predicts y : bacterial load(s) at x : time(s)
+            predicts y : bacterial load(s) at  : time(s)
         Secondary models :
-            predicts primary model parameter y as a function of variable x
+            predicts primary model parameter y as a function of variable
         The model instance has to be fitted (.fit method) before prediction
 
         x : can be a single value (float) or a list of time points
