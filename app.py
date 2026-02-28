@@ -82,7 +82,8 @@ with tab_prediction:
         def change_food(food):
             st.session_state['food'] = food
 
-        matrixID = st.text(st.session_state['food'])
+        matrixID = st.session_state['food']
+        st.text(matrixID)
 
         col1, col2, col3, col4  = st.columns(4)
 
