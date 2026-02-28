@@ -187,36 +187,13 @@ def data_engineering(df):
 
     return df
 
-def data_preproc(df,train_df):
-
-    # Select only numerical columns for scaling
-    numerical_cols = df.drop(columns=['ResponseID', 'Time_diff']).select_dtypes(include=['float64', 'int64']).columns
-    #numerical_cols = ['Time', 'Temperature']
-
-    # Scale numerical features using MinMaxScaler
-    scaler = MinMaxScaler()
-    scaler.fit(train_df[numerical_cols])
-    df[numerical_cols] = scaler.transform(df[numerical_cols])
-
-    # One-hot encode categorical features
-    categorical_cols = df.select_dtypes(include=['object']).columns
-    #categorical_cols = ['MatrixID']
-    ohe = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
-    ohe.fit(df[categorical_cols])
-    df[ohe.get_feature_names_out()] = ohe.transform(df[categorical_cols])
-    df = df.drop(columns=categorical_cols)
-
-    # Combine scaled numerical features with one-hot encoded categorical features
-    #df = pd.concat([df['ResponseID'], df[numerical_cols].reset_index(drop=True), encoded_cat_df.reset_index(drop=True)], axis=1)
-
-    return df
 
 def interpolate(df):
     master_time_grid = np.arange(0, 504, 1)
 
     processed_data = []
 
-    for response_id, group in engineered_df.groupby('ResponseID'):
+    for response_id, group in df.groupby('ResponseID'):
         # 1. Ensure data is sorted by time (Crucial for PCHIP)
         group = group.sort_values('Time_diff')
 
