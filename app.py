@@ -11,7 +11,8 @@ from interface import recipes
 
 st.set_page_config(page_title="SaferFood", layout="centered")
 
-st.title("SaferFood", text_alignment='center')
+st.title("Is my food safe to eat?", text_alignment='center')
+st.markdown('Customer edition', text_alignment='center')
 
 # Food categories to display/select from
 FOOD_CATEGORIES = ['beef', 'produce', 'seafood', 'poultry', 'pork']
@@ -60,21 +61,39 @@ tab_prediction, tab_explanations, tab_recipes = st.tabs(
     ["Prediction", "Explanations", "Recipes"]
 )
 
-
 with tab_prediction:
 
     # Create vertical layout (left / right)
-    col_left, col_right = st.columns([1, 2])  # ratio adjustable
+    col_left, col_right = st.columns([5,11])  # ratio adjustable
 
     # =========================
     # LEFT COLUMN (INPUTS)
     # =========================
     with col_left:
 
-        matrixID = st.selectbox(
-            "What do you plan on eating today ?",
-            FOOD_CATEGORIES
-        )
+        #matrixID = st.selectbox(
+        #    "What do you plan on eating today ?",
+        #    FOOD_CATEGORIES
+        #)
+
+        if 'food' not in  st.session_state:
+            st.session_state['food'] = 'Make a choice'
+
+        def change_food(food):
+            st.session_state['food'] = food
+
+        matrixID = st.text(st.session_state['food'])
+
+        col1, col2, col3, col4  = st.columns(4)
+
+        with col1:
+            st.button(':cow2:', on_click=change_food, args=['beef'])
+        with col2:
+            st.button(':pig:', on_click=change_food, args=['pork'])
+        with col3:
+            st.button(':rooster:', on_click=change_food, args=['poultry'])
+        with col4:
+            st.button(':lobster:', on_click=change_food, args=['seafood'])
 
         temperature_value = st.slider(
             "What was your food's storage temperature ?",
