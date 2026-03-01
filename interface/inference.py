@@ -1,17 +1,34 @@
 '''
 Docstring for interface.inference
 Effectue l'inférence : reçoit les données entrées par l'utilisateur, et renvoie SAFE/UNSAFE, seuil de cuisson, données, graphe
+Paramètres à fournir :
+            params = {
+                "matrixID": matrixID,
+                "temperature": temperature_value,
+                "time": time_in_hours
+            }
 '''
 
 import numpy as np
 import matplotlib.pyplot as plt
-from ml_logic.baseline import ClassicalModel
+#from ml_logic.baseline import ClassicalModel
+from ml_logic.sk_baseline import ClassicalModelRegressor
 from interface.bacteria_information import MICROORGANISM
+from . import arrhenius_parameters #arrhenius_parameters.csv was loaded in the arrhenius_parameters dataframe in interface/__init__.py (just once)
+
 
 
 #TODO : travailler le type hinting
 def infer(params):
-    #Valeurs par défaut
+
+    # Paramètres fournis:
+    # params = {
+    #     "matrixID": matrixID,
+    #     "temperature": temperature_value,
+    #     "time": time_in_hours
+    # }
+
+    # Valeurs retournées par défaut
     is_safe = None
     bacterias = None
     final_logC = None
@@ -24,11 +41,13 @@ def infer(params):
 
     #TODO vérification des données
 
-    #TODO application du modèle
+    # TODO Pour l'instant : nodèle classique, remplacer par ML/AI
 
-    #dummy responses, just for MVP
-    is_safe = True
-    # print(f'{params=}')
+    primary_model = ClassicalModelRegressor('baranyi')
+    secondary_model = ClassicalModelRegressor('arrhenius')
+
+    
+
     times = np.linspace(
         start = 0,
         stop=params['time'],
@@ -36,14 +55,10 @@ def infer(params):
         )
 
     # Dummy model, hard-coded for demo
-    # TODO replace by real model call
-    model = ClassicalModel()
-    model.model = 'baranyi'
-    model.params = {'Initial Value' : 3.143,
-                    'Lag': 33.259,
-                    'Maximum Rate':0.0399,
-                    'Final Value': 9.0967
-                    }
+
+
+
+
     logCs = model.predict(x = times)
     # print(f'{times=}, {type(times)=}, {type(logCs)=}')
 
