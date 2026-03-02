@@ -3,11 +3,14 @@ pandas
 seaborn
 matplotlib
 scikit-learn
+scipy
+
+#streamlit app
+transformers
 streamlit
 streamlit[charts]
-keras
-tensorflow
-scipy
+Pillow
+tensorflow==2.15.0
 
 #Explanation LLM
 langchain
