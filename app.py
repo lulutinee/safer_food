@@ -21,9 +21,9 @@ st.markdown('Customer edition', text_alignment='center')
 
 # Food categories to display/select from
 FOOD_CATEGORIES = ['beef', 'seafood', 'poultry', 'pork']
-FOOD_DICT = {'beef': ':cow2:',
+FOOD_DICT = {'beef': ':steak:',
              'pork': ':pig:',
-             'poultry': ':rooster:',
+             'poultry': ':poultry:',
              'seafood': ':lobster:'}
 
 # Storage temperatures to select from
@@ -194,9 +194,10 @@ with tab_explanations:
 - Model caveats and proper food safety guidance
 """
     )
-    if bacterias is not None:
-        explanations = explanations.risk_explanation(bacterias, max_output_tokens=2000)
-        st.markdown(explanations)
+    with st.spinner("Let me explain to you..."):
+        if bacterias is not None:
+            explanations = explanations.risk_explanation(bacterias, max_output_tokens=2000)
+            st.markdown(explanations)
 
 with tab_recipes:
     st.header("Recipes")
