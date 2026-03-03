@@ -10,8 +10,6 @@ transformers
 streamlit
 streamlit[charts]
 Pillow
-tensorflow==2.15.0
-tensorflow-datasets
 tensorflow_hub
 torch
 torchvision
