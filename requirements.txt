@@ -15,6 +15,7 @@ tensorflow-datasets
 tensorflow_hub
 torch
 torchvision
+plotly
 
 #Explanation LLM
 langchain
