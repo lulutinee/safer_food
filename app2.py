@@ -10,6 +10,7 @@ from PIL import Image
 import tensorflow as tf
 from keras.applications.efficientnet import EfficientNetB0, preprocess_input
 from PIL import Image
+import plotly.graph_objects as go
 
 from interface.inference import infer
 from interface import explanations
@@ -42,6 +43,24 @@ st.markdown("""
 .safe {color:#1E8449; font-weight:bold;}
 .warning {color:#D68910; font-weight:bold;}
 .danger {color:#C0392B; font-weight:bold;}
+
+/* Targets the <p> tag within the div that holds the st.slider label */
+div[class*="stSlider"] p {
+    font-size: 20px; /* Adjust the size as needed */
+}
+
+/* Target only the button with key="run_pred" */
+.st-key-run_pred button {
+    padding: 0.9rem 1.2rem !important;
+    line-height: 0.8 !important;
+}
+
+/* In some Streamlit versions, the label is inside spans */
+.st-key-run_pred button * {
+    font-size: 22px !important;
+    font-weight: 600 !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -67,6 +86,12 @@ FOOD_MODELS = {
     "Dairy Product": {"Tmin": -2, "b": 0.017, "pathogen": "Listeria"},
     "Seafood": {"Tmin": -1, "b": 0.02, "pathogen": "Vibrio"},
     "Fresh Vegetables": {"Tmin": 0, "b": 0.014, "pathogen": "Listeria"}
+}
+
+PATHOGEN_MODELS = {
+    "E. coli":      {"Tmin": -1.0, "b": 0.018, "N0": 1e1, "Nmax": 1e9},
+    "Listeria":     {"Tmin": -2.0, "b": 0.017, "N0": 1e1, "Nmax": 1e9},
+    "Salmonella":   {"Tmin": -2.0, "b": 0.020, "N0": 1e1, "Nmax": 1e9},
 }
 
 # -----------------------------
@@ -124,6 +149,60 @@ def classify_risk(N):
     else:
         return "High Risk", "danger"
 
+def risk_from_count(N):
+    # same logic as your classify_risk thresholds
+    if N < 1e4:
+        return "Safe", 0.2
+    elif N < 1e6:
+        return "Caution", 0.6
+    else:
+        return "High Risk", 0.95
+
+def make_gauge(title, N):
+    status, frac = risk_from_count(N)
+
+    # map risk fraction to a 0-100 gauge
+    value = int(frac * 100)
+
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=value,
+        number={"suffix": "%"},
+        title={"text": f"{title}<br><span style='font-size:12px'>Pred: {N:,.0f} CFU/g • {status}</span>"},
+        gauge={
+            "axis": {"range": [0, 100]},
+            "steps": [
+                {"range": [0, 35], "color": "#E8F8F5"},   # safe zone
+                {"range": [35, 75], "color": "#FCF3CF"}, # caution zone
+                {"range": [75, 100], "color": "#F5B7B1"} # high risk
+            ],
+            "threshold": {"line": {"color": "#E14F3D", "width": 4}, "thickness": 0.8, "value": value}
+        }
+    ))
+    fig.update_layout(height=220, margin=dict(l=20, r=20, t=50, b=10))
+    return fig
+
+def time_to_reach_threshold_logistic(N0, Nmax, mu, N_thresh):
+    """
+    Solve logistic growth for t when N(t) = N_thresh.
+    Returns np.inf if mu==0 or if threshold not reachable.
+    """
+    if mu <= 0:
+        return np.inf
+    if N_thresh <= N0:
+        return 0.0
+    if N_thresh >= Nmax:
+        return np.inf
+
+    # Logistic: N(t) = Nmax / (1 + A*exp(-mu*t)), A = (Nmax-N0)/N0
+    A = (Nmax - N0) / N0
+    # Rearranged:
+    # t = -(1/mu) * ln( ((Nmax/N_thresh)-1) / A )
+    inside = ((Nmax / N_thresh) - 1.0) / A
+    if inside <= 0:
+        return np.inf
+    return float(-(1.0 / mu) * np.log(inside))
+
 # Map AI label to microbial category
 def map_food_category(label):
     label = label.lower()
@@ -174,16 +253,26 @@ with st.sidebar:
     st.markdown("### SaferFood™")
     st.caption("AI-assisted food safety estimation")
 
-col1, col2 = st.columns([1,2])
+col1, col2 = st.columns([1,3])
 
 with col1:
+    if "uploaded_file" not in st.session_state:
+        st.session_state.uploaded_file = None
+
     input_method = st.radio("Food identification method:", ["Select Food Category","Upload Image"])
 
     if input_method == "Upload Image":
-        file = st.file_uploader("Upload food image", type=["jpg","png","jpeg"])
-        if file:
-            img = Image.open(file)
-            st.image(img)
+        if st.session_state.uploaded_file is None:
+
+            uploaded = st.file_uploader("Upload food image", type=["jpg", "jpeg", "png"])
+
+            if uploaded is not None:
+                st.session_state.uploaded_file = uploaded
+                st.rerun()   # immediately refresh UI
+
+        else:
+            img = Image.open(st.session_state.uploaded_file)
+            st.image(img, width=150)
 
             with st.spinner("Analyzing food with AI..."):
                 processed = preprocess_food_image(img)
@@ -196,50 +285,57 @@ with col1:
                     top_index = np.argmax(preds[0])
                     food = FOOD101_LABELS[top_index]
                     confidence = preds[0][top_index]
-                    st.success(f"Detected dish: {food} ({confidence:.2%})")
+                    st.success(f"Detected dish: {food}")
+
+            if st.button("🔄 Upload another image"):
+                st.session_state.uploaded_file = None
+                st.rerun()
 
     else:
         food = st.selectbox("Select food type:", list(FOOD_MODELS.keys()))
 
 with col2:
     temperature = st.slider("🌡Storage Temperature (°C)", -5, 40, 4)
-    time_label = st.select_slider("🕘Storage Time (hours)",
+    time_label = st.select_slider("🕘Storage Time",
                             options=list(STORAGE_TIMES.keys()),
                             value="24 h" if "24 h" in STORAGE_TIMES else "1 d")
     time_hours = STORAGE_TIMES[time_label]
 
+    if "prediction_done" not in st.session_state:
+        st.session_state.prediction_done = False
+
+    if "prediction" not in st.session_state:
+        st.session_state.prediction = {}
+
+    if st.button("🍽 Should I eat it?",
+                 type="primary",
+                 use_container_width=True,
+                 key="run_pred"):
+        params = {
+            "matrixID": food,
+            "temperature": temperature,
+            "time": time_hours
+        }
+
+        results = infer(params=params)
+        is_safe = results.get('is_safe')
+        bacterias = results.get('bacterias')
+        cooking_reco = results.get('cooking_reco')
+        fig = results.get('fig')
+
+        # Store everything needed for display + AI explanation
+        st.session_state.prediction_done = True
+        st.session_state.prediction = {
+            "food": food,
+            "temperature": temperature,
+            "time_hours": time_hours,
+            "bacterias": bacterias,
+            "is_safe": is_safe,
+            "cooking_reco": cooking_reco,
+            "fig": fig
+        }
+
 st.markdown("---")
-
-if "prediction_done" not in st.session_state:
-    st.session_state.prediction_done = False
-
-if "prediction" not in st.session_state:
-    st.session_state.prediction = {}
-
-if st.button("🍽 Should I eat it?"):
-    params = {
-        "matrixID": food,
-        "temperature": temperature,
-        "time": time_hours
-    }
-
-    results = infer(params=params)
-    is_safe = results.get('is_safe')
-    bacterias = results.get('bacterias')
-    cooking_reco = results.get('cooking_reco')
-    fig = results.get('fig')
-
-    # Store everything needed for display + AI explanation
-    st.session_state.prediction_done = True
-    st.session_state.prediction = {
-        "food": food,
-        "temperature": temperature,
-        "time_hours": time_hours,
-        "bacterias": bacterias,
-        "is_safe": is_safe,
-        "cooking_reco": cooking_reco,
-        "fig": fig
-    }
 
 if st.session_state.prediction_done:
     p = st.session_state.prediction
@@ -255,10 +351,80 @@ if st.session_state.prediction_done:
         st.markdown(f'Given our predictions, your {p["food"]} should be eaten at least {p["cooking_reco"]}.')
         st.markdown(f'Please consider reaching an internal temperature of 71°C for ground meats or 74°C for poultry!')
 
-    if p["fig"] is not None:
-        st.plotly_chart(p["fig"])
+    # -----------------------------
+    # DASHBOARD: Pathogen risk gauges + shelf-life
+    # -----------------------------
+    st.markdown("## 📊 Microbial Risk Dashboard")
+
+    # Predict each pathogen using its own model parameters
+    pathogen_counts = {}
+    for name, pm in PATHOGEN_MODELS.items():
+        mu_p = ratkowsky_growth_rate(temperature, pm["Tmin"], pm["b"])
+        N_p = logistic_growth(pm["N0"], pm["Nmax"], mu_p, time_hours)
+        pathogen_counts[name] = (N_p, mu_p)
+
+    # Total count: simple conservative choice = max of pathogens (or sum if you prefer)
+    total_count = max(v[0] for v in pathogen_counts.values())
+
+    # --- Gauges in 4 columns
+    c1, c2, c3, c4 = st.columns(4)
+
+    with c1:
+        st.plotly_chart(make_gauge("E. coli", pathogen_counts["E. coli"][0]), use_container_width=True)
+    with c2:
+        st.plotly_chart(make_gauge("Listeria", pathogen_counts["Listeria"][0]), use_container_width=True)
+    with c3:
+        st.plotly_chart(make_gauge("Salmonella", pathogen_counts["Salmonella"][0]), use_container_width=True)
+    with c4:
+        st.plotly_chart(make_gauge("Total Count", total_count), use_container_width=True)
+
+    # -----------------------------
+    # Remaining shelf-life section
+    # -----------------------------
+    st.markdown("## ⏳ Remaining Shelf-Life")
+
+    # Choose shelf-life limit: you can tune this
+    # "Safe" limit = 1e4; "High risk" limit = 1e6
+    SAFE_LIMIT = 1e4
+    RISK_LIMIT = 1e6
+
+    # Use the "total count driver" for shelf-life (conservative = worst mu among pathogens)
+    worst_mu = max(mu for (_, mu) in pathogen_counts.values())
+
+    # For shelf-life math, we need N0/Nmax; use a representative set
+    N0_rep = 1e1
+    Nmax_rep = 1e9
+
+    t_safe = time_to_reach_threshold_logistic(N0_rep, Nmax_rep, worst_mu, SAFE_LIMIT)
+    t_risk = time_to_reach_threshold_logistic(N0_rep, Nmax_rep, worst_mu, RISK_LIMIT)
+
+    remaining_safe = max(0.0, t_safe - time_hours)
+    remaining_risk = max(0.0, t_risk - time_hours)
+
+    # Display
+    m1, m2, m3 = st.columns(3)
+    with m1:
+        st.metric("Remaining time until 'Caution' (10⁴ CFU/g)", f"{remaining_safe:.1f} h")
+    with m2:
+        st.metric("Remaining time until 'High Risk' (10⁶ CFU/g)", f"{remaining_risk:.1f} h")
+    with m3:
+        st.metric("Current total estimate", f"{total_count:,.0f} CFU/g")
+
+    # Optional progress bar toward high risk
+    if np.isfinite(t_risk) and t_risk > 0:
+        progress = min(1.0, time_hours / t_risk)
+        st.progress(progress)
+        st.caption(f"Progress toward high-risk limit at {temperature}°C: {progress*100:.0f}%")
     else:
-        st.warning("No figure returned by infer().")
+        st.info("At this temperature, growth is minimal (or model predicts threshold not reachable).")
+
+    # -----------------------------
+    # Bacterial growth chart
+    # -----------------------------
+    # if p["fig"] is not None:
+    #     st.plotly_chart(p["fig"])
+    # else:
+    #     st.warning("No figure returned by infer().")
 
     if st.button("What does it mean?"):
         with st.spinner("Generating detailed explanation..."):
