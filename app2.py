@@ -1,4 +1,4 @@
-import os
+import os, json, tempfile
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"   # Force CPU only
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_enable_xla_devices=false"
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
@@ -16,23 +16,20 @@ from interface.inference import infer
 from interface import explanations
 from interface import recipes
 
-import json
 from google.oauth2 import service_account
 
 GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
 GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
 GOOGLE_GENAI_USE_VERTEXAI = st.secrets['GOOGLE_GENAI_USE_VERTEXAI']
 
-google_key_json = os.environ.get("GOOGLE_PRIVATE_KEY_JSON") or st.secrets["GOOGLE_PRIVATE_KEY_JSON"]
+service_account = json.loads(st.secrets["GOOGLE_PRIVATE_KEY_JSON"])
 
-# Parse the JSON
-key_info = json.loads(google_key_json)
+tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+tmp.write(json.dumps(service_account).encode())
+tmp.close()
 
-# Create credentials object
-credentials = service_account.Credentials.from_service_account_info(key_info)
-
-# Initialize LangChain Gemini/PaLM client
-#chat = ChatGoogleGenerativeAI(credentials=credentials)
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+os.environ["GOOGLE_CLOUD_PROJECT"] = service_account["project_id"]
 
 # -----------------------------
 # Page Config
