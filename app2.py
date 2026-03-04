@@ -24,6 +24,16 @@ GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
 GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
 GOOGLE_GENAI_USE_VERTEXAI = st.secrets['GOOGLE_GENAI_USE_VERTEXAI']
 
+google_key_json = os.environ.get("GOOGLE_PRIVATE_KEY_JSON")  or st.secrets["GOOGLE_PRIVATE_KEY_JSON"]
+
+# Parse the JSON
+key_info = json.loads(google_key_json)
+
+# Create credentials object
+credentials = service_account.Credentials.from_service_account_info(key_info)
+
+# Initialize LangChain Gemini/PaLM client
+#chat = ChatGoogleGenerativeAI(credentials=credentials)
 
 # -----------------------------
 # Page Config
@@ -437,7 +447,7 @@ if st.session_state.prediction_done:
 
     if st.button("What does it mean?"):
         with st.spinner("Generating detailed explanation..."):
-            explanations = explanations.risk_explanation(p["bacterias"], max_output_tokens=2000)
+            explanations = explanations.risk_explanation(p["bacterias"], max_output_tokens=2000, credentials=credentials)
 
         st.markdown("### 🧠 AI Detailed Explanation")
         st.write(explanations)
