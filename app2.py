@@ -18,7 +18,6 @@ from interface import recipes
 
 import json
 from google.oauth2 import service_account
-from langchain.chat_models import ChatGoogleGemini
 
 GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
 GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
