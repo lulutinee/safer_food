@@ -24,7 +24,7 @@ GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
 GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
 GOOGLE_GENAI_USE_VERTEXAI = st.secrets['GOOGLE_GENAI_USE_VERTEXAI']
 
-google_key_json = os.environ.get("GOOGLE_PRIVATE_KEY_JSON")  or st.secrets["GOOGLE_PRIVATE_KEY_JSON"]
+google_key_json = os.environ.get("GOOGLE_PRIVATE_KEY_JSON") or st.secrets["GOOGLE_PRIVATE_KEY_JSON"]
 
 # Parse the JSON
 key_info = json.loads(google_key_json)
