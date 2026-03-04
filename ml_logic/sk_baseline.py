@@ -413,7 +413,7 @@ class ClassicalModelRegressor(BaseEstimator, RegressorMixin):
             return X_arr
         raise ValueError(f"X must be 1D or 2D. Got array with ndim={X_arr.ndim}.")
 
-
+# TODO : cleanup this file (remove old code, etc)
 # class ClassicalModelRegressor(BaseEstimator, RegressorMixin):
 #     """
 #     A scikit-learn compatible regressor implementing several classical models.
