@@ -446,7 +446,7 @@ if st.session_state.prediction_done:
 
     if st.button("What does it mean?"):
         with st.spinner("Generating detailed explanation..."):
-            explanations = explanations.risk_explanation(p["bacterias"], max_output_tokens=2000, credentials=credentials)
+            explanations = explanations.risk_explanation(p["bacterias"], max_output_tokens=2000)
 
         st.markdown("### 🧠 AI Detailed Explanation")
         st.write(explanations)
