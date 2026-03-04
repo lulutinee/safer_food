@@ -33,7 +33,8 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-load_dotenv()
+# Optional for local dev only; Streamlit Cloud won't use .env
+load_dotenv(override=False)
 logger = logging.getLogger(__name__)
 
 Provider = Literal["gemini_api", "vertex", "auto"]
@@ -108,6 +109,9 @@ def _build_llm(
     model: str,
     temperature: float,
     max_output_tokens: int,
+    gemini_api_key: Optional[str] = None,
+    gcp_project: Optional[str] = None,
+    gcp_region: Optional[str] = None,
 ) -> ChatGoogleGenerativeAI:
 
     if provider == "gemini_api":
@@ -127,7 +131,7 @@ def _build_llm(
     if not project:
         raise RuntimeError("GOOGLE_CLOUD_PROJECT not set.")
 
-    location = _get_env("GOOGLE_CLOUD_REGION") or "us-central1"
+    location = (gcp_region or _get_env("GOOGLE_CLOUD_REGION") or "us-central1")
 
     return ChatGoogleGenerativeAI(
         model=model,
@@ -145,6 +149,9 @@ def risk_explanation(
     model: str = "gemini-2.5-flash",
     temperature: float = 0.2,
     max_output_tokens: int = 800,
+    gemini_api_key: Optional[str] = None,
+    gcp_project: Optional[str] = None,
+    gcp_region: Optional[str] = None,
 ) -> str:
 
     selected_provider = _select_provider(provider)
@@ -157,6 +164,9 @@ def risk_explanation(
         model=model,
         temperature=temperature,
         max_output_tokens=max_output_tokens,
+        gemini_api_key=gemini_api_key,
+        gcp_project=gcp_project,
+        gcp_region=gcp_region,
     )
 
     prompt = ChatPromptTemplate.from_template(RISK_PROMPT_TEMPLATE)
