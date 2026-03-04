@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 from dotenv import load_dotenv
+import ast
 
 
 # Load environment variables
@@ -31,4 +32,14 @@ if not csv_path.exists():
     raise FileNotFoundError(f"CSV file not found at: {csv_path}")
 
 # Load once
-arrhenius_parameters = pd.read_csv(csv_path, sep='\t')
+cols_to_convert = [
+    "Initial Value",
+    "Lag",
+    "Maximum Rate",
+    "Final Value"
+]
+
+arrhenius_parameters = pd.read_csv(
+    csv_path, sep='\t',
+    converters={col: ast.literal_eval for col in cols_to_convert}
+)
