@@ -19,7 +19,7 @@ from interface import recipes
 GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
 GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
 GOOGLE_GENAI_USE_VERTEXAI = st.secrets['GOOGLE_GENAI_USE_VERTEXAI']
-GOOGLE_APPLICATION_CREDENTIALS = st.secrets[gcp_service_account]
+GOOGLE_APPLICATION_CREDENTIALS = st.secrets["gcp_service_account"]['GOOGLE_APPLICATION_CREDENTIALS']
 
 # -----------------------------
 # Page Config
