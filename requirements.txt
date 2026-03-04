@@ -8,7 +8,6 @@ scipy
 #streamlit app
 transformers
 streamlit
-streamlit[charts]
 Pillow
 tensorflow_hub
 torch
