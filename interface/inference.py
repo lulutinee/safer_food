@@ -18,6 +18,8 @@ from . import arrhenius_parameters #arrhenius_parameters.csv was loaded in the a
 from interface.graphics import plot_predictions_over_time
 
 
+MAX_PREDICTION_TIME = 1000 # Maximum prediction time (to compute the max. storage time)
+
 #TODO : travailler le type hinting
 def infer(params):
 
@@ -134,13 +136,13 @@ def infer(params):
 
     # Package everything in a dictionary and return the data
     result = {
-        'is_safe': is_safe,
-        'bacterias': bacterias,
-        'final_logC': final_concentration,
-        'cooking_reco': cooking_reco,
-        'times': times,
-        'logCs': predictions,
-        'fig': fig
+        'is_safe': is_safe,                 # Is the food safe ?
+        'bacterias': bacterias,             # What are the bacteria whose final concentration might be a concenr ?
+        'final_logC': final_concentration,  # What are the final concentrations of the various bacteria ?
+        'cooking_reco': cooking_reco,       # What are the cooking recommendations ?
+        'times': times,                     # Predicted growth : storage time
+        'logCs': predictions,               # Predicted growth : concentration of each bacteria
+        'fig': fig                          # Graphics of growth vs time
     }
 
     return result
