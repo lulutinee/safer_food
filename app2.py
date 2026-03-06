@@ -4,6 +4,7 @@ os.environ["TF_XLA_FLAGS"] = "--tf_xla_enable_xla_devices=false"
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
 import streamlit as st
+import streamlit.components.v1 as components
 import numpy as np
 from PIL import Image
 
@@ -12,24 +13,23 @@ from keras.applications.efficientnet import EfficientNetB0, preprocess_input
 from PIL import Image
 import plotly.graph_objects as go
 
-from interface.inference import infer
-from interface import explanations
-from interface import recipes
-
+#GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
+#GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
+#GOOGLE_GENAI_USE_VERTEXAI = st.secrets['GOOGLE_GENAI_USE_VERTEXAI']
 from google.oauth2 import service_account
+# service_account = json.loads(st.secrets["GOOGLE_PRIVATE_KEY_JSON"])
 
-GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
-GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
-GOOGLE_GENAI_USE_VERTEXAI = st.secrets['GOOGLE_GENAI_USE_VERTEXAI']
+# tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+# tmp.write(json.dumps(service_account).encode())
+# tmp.close()
 
-service_account = json.loads(st.secrets["GOOGLE_PRIVATE_KEY_JSON"])
+# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+# os.environ["GOOGLE_CLOUD_PROJECT"] = service_account["project_id"]
 
-tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-tmp.write(json.dumps(service_account).encode())
-tmp.close()
-
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
-os.environ["GOOGLE_CLOUD_PROJECT"] = service_account["project_id"]
+from interface.inference import infer
+from interface import explanations, recipes
+import thermometer_component
+from thermometer_component import thermometer_slider
 
 # -----------------------------
 # Page Config
@@ -52,32 +52,210 @@ st.set_page_config(page_title="SaferFood", page_icon=logo2, layout="wide")
 # -----------------------------
 # Styling
 # -----------------------------
-st.markdown("""
+import streamlit as st
+
+st.markdown(
+"""
 <style>
-.main-title {font-size:38px; font-weight:700; color:white;}
-.safe {color:#1E8449; font-weight:bold;}
-.warning {color:#D68910; font-weight:bold;}
-.danger {color:#C0392B; font-weight:bold;}
 
-/* Targets the <p> tag within the div that holds the st.slider label */
-div[class*="stSlider"] p {
-    font-size: 20px; /* Adjust the size as needed */
+/* =========================
+   App Background
+   ========================= */
+
+.stApp {
+    background-color: #2C2A29;
+    color: #F5F5F5;
 }
 
-/* Target only the button with key="run_pred" */
-.st-key-run_pred button {
-    padding: 0.9rem 1.2rem !important;
-    line-height: 0.8 !important;
+/* =========================
+   Text
+   ========================= */
+
+.sf-title {
+    font-size: 3rem;
+    font-weight: 800;
+    color: white;
+    margin-bottom: -0.7rem;
+}
+h1, h2, h3, h4, h5, h6 {
+    color: #F5F5F5;
 }
 
-/* In some Streamlit versions, the label is inside spans */
-.st-key-run_pred button * {
-    font-size: 22px !important;
-    font-weight: 600 !important;
+p, label {
+    color: #F5F5F5;
 }
+
+/* =========================
+   Buttons
+   ========================= */
+
+div.stButton > button {
+    background-color: #E14F3D;
+    color: white;
+    border-radius: 10px;
+    border: none;
+    font-weight: 700;
+    padding: 0.6em 1.2em;
+}
+
+div.stButton > button:hover {
+    background-color: #c94333;
+    color: white;
+}
+
+/* =========================
+   Selectbox
+   ========================= */
+
+div[data-baseweb="select"] > div {
+    background-color: #161514 !important;
+    border: 1px solid #FFFFFF !important;
+    color: white !important;
+}
+
+/* Dropdown menu */
+
+ul[role="listbox"] {
+    background-color: #161514 !important;
+}
+
+ul[role="listbox"] li {
+    color: white !important;
+}
+
+/* =========================
+   Number input
+   ========================= */
+
+div[data-baseweb="input"] > div {
+    background-color: #161514 !important;
+    border: 1px solid white !important;
+}
+
+/* =========================
+   Slider
+   ========================= */
+
+.stSlider > div[data-baseweb="slider"] > div > div {
+    background: #E14F3D;
+}
+
+/* =========================
+   Tabs
+   ========================= */
+
+button[data-baseweb="tab"] {
+    background-color: #161514;
+    color: #F5F5F5;
+}
+
+button[data-baseweb="tab"][aria-selected="true"] {
+    border-bottom: 3px solid #E14F3D;
+}
+
+/* =========================
+   Metric cards
+   ========================= */
+
+div[data-testid="stMetric"] {
+    background-color: #1d1c1b;
+    padding: 10px;
+    border-radius: 10px;
+}
+
+/* =========================
+   Dataframe
+   ========================= */
+
+[data-testid="stDataFrame"] {
+    background-color: #161514;
+}
+
+/* =========================
+   Sidebar
+   ========================= */
+
+section[data-testid="stSidebar"] {
+    background-color: #121110;
+}
+
+/* =========================
+   File uploader
+   ========================= */
+
+section[data-testid="stFileUploader"] {
+    background-color: #1d1c1b;
+    border-radius: 10px;
+    padding: 10px;
+}
+
+/* =========================
+   Expander
+   ========================= */
+
+details {
+    background-color: #1d1c1b;
+    border-radius: 8px;
+    padding: 8px;
+}
+
+/* =========================
+   Scrollbar (optional)
+   ========================= */
+
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #E14F3D;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: #161514;
+}
+
+/* ---------------------------
+   HARD OVERRIDE for Streamlit 1.54.0 NumberInput steppers
+   Scoped ONLY to these two inputs via .st-key-...
+   --------------------------- */
+
+
+/* Keep the text readable */
+.st-key-days_input  input,
+.st-key-hours_input input {
+  color: #F5F5F5 !important;
+  font-weight: 800 !important;
+}
+
+
+/* Arrow buttons background + remove default styles */
+.st-key-days_input  button,
+.st-key-hours_input button {
+  background-color: #161514 !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Arrow icons color */
+.st-key-days_input  button svg,
+.st-key-hours_input button svg {
+  fill: #E14F3D !important;
+  color: #E14F3D !important;
+}
+
+/* Hover effect */
+.st-key-days_input  button:hover,
+.st-key-hours_input button:hover {
+  background-color: rgba(225,79,61,0.12) !important;
+}
+
 
 </style>
-""", unsafe_allow_html=True)
+""",
+unsafe_allow_html=True
+)
 
 # -----------------------------
 # Variables
@@ -250,6 +428,324 @@ def preprocess_food_image(img_pil):
     return img_array
 
 # -----------------------------
+# Thermometer slider
+# -----------------------------
+def thermometer_slider(
+    label: str,
+    min_value: int = -5,
+    max_value: int = 40,
+    value: int = 4,
+    step: int = 1,
+    height: int = 360,
+    key: str = "thermo_temp",
+    color: str = "#E14F3D",
+):
+    """
+    Vertical thermometer slider rendered in HTML.
+    User drags mercury level inside thermometer to change value.
+    Returns an int (or float if you change it) back to Streamlit.
+    """
+    # Streamlit component returns a value; we keep state in session_state
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+    # Use the last value as default (so it persists on reruns)
+    value = st.session_state[key]
+
+    html = f"""
+    <style>
+      .thermo-wrap {{
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        user-select: none;
+      }}
+      .thermo-label {{
+        font-size: 20px;
+        font-weight: 600;
+        color: #fff;
+      }}
+      .thermo-row {{
+        display:flex;
+        align-items:center;
+        gap: 16px;
+      }}
+      .thermo {{
+        position: relative;
+        width: 70px;
+        height: 300px;
+      }}
+      .tube {{
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 26px;
+        height: 240px;
+        top: 10px;
+        border-radius: 18px;
+        border: 3px solid #444;
+        background: linear-gradient(180deg, #f7f7f7 0%, #ededed 100%);
+        overflow: hidden;
+      }}
+      .bulb {{
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        bottom: 0px;
+        width: 54px;
+        height: 54px;
+        border-radius: 50%;
+        border: 3px solid #444;
+        background: linear-gradient(180deg, #f7f7f7 0%, #eaeaea 100%);
+        overflow: hidden;
+      }}
+      .mercury {{
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 0%;
+        background: {color};
+      }}
+      .mercury-gloss {{
+        position: absolute;
+        left: 18%;
+        width: 18%;
+        top: 4%;
+        bottom: 4%;
+        border-radius: 99px;
+        background: rgba(255,255,255,0.35);
+      }}
+      .bulb .mercury {{
+        border-radius: 50%;
+      }}
+      .value-box {{
+        min-width: 90px;
+        font-size: 20px;
+        font-weight: 800;
+        color: #fff;
+      }}
+      .hint {{
+        font-size: 12px;
+        color: #666;
+        margin-top: 2px;
+      }}
+
+      /* Invisible input overlay to capture drag inside thermometer */
+      .overlay {{
+        position:absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        top: 10px;
+        width: 26px;
+        height: 240px;
+        border-radius: 18px;
+        cursor: ns-resize;
+        background: rgba(0,0,0,0);
+      }}
+
+      /* Tick marks (optional) */
+      .ticks {{
+        position:absolute;
+        left: calc(50% + 18px);
+        top: 10px;
+        height: 240px;
+        width: 16px;
+        display:flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }}
+      .tick {{
+        height: 2px;
+        background: #555;
+        border-radius: 2px;
+        width: 10px;
+        opacity: 0.7;
+      }}
+    </style>
+
+    <div class="thermo-wrap">
+      <div class="thermo-label">{label}</div>
+
+      <div class="thermo-row">
+        <div class="thermo" id="thermo">
+          <div class="tube">
+            <div class="mercury" id="tubeMercury"></div>
+            <div class="mercury-gloss"></div>
+          </div>
+
+          <div class="bulb">
+            <div class="mercury" id="bulbMercury"></div>
+            <div class="mercury-gloss"></div>
+          </div>
+
+          <div class="overlay" id="dragArea" aria-label="drag temperature"></div>
+
+          <div class="ticks">
+            <div class="tick"></div>
+            <div class="tick"></div>
+            <div class="tick"></div>
+            <div class="tick"></div>
+            <div class="tick"></div>
+            <div class="tick"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="value-box"><span id="valText">{value}</span> °C</div>
+          <div class="hint">Drag inside the thermometer</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const minV = {min_value};
+      const maxV = {max_value};
+      const step = {step};
+      let value = {value};
+
+      const tubeMercury = document.getElementById("tubeMercury");
+      const bulbMercury = document.getElementById("bulbMercury");
+      const valText = document.getElementById("valText");
+      const dragArea = document.getElementById("dragArea");
+
+      function clamp(x, a, b) {{
+        return Math.max(a, Math.min(b, x));
+      }}
+
+      function snapToStep(v) {{
+        const snapped = Math.round((v - minV) / step) * step + minV;
+        return clamp(snapped, minV, maxV);
+      }}
+
+      function percentFromValue(v) {{
+        return ((v - minV) / (maxV - minV)) * 100;
+      }}
+
+      function setUI(v) {{
+        const pct = percentFromValue(v);
+        tubeMercury.style.height = pct + "%";
+        bulbMercury.style.height = "100%";
+        valText.textContent = v;
+      }}
+
+      function emitValue(v) {{
+        // Streamlit component protocol
+        const out = {{ value: v }};
+        window.parent.postMessage({{
+          isStreamlitMessage: true,
+          type: "streamlit:setComponentValue",
+          value: out
+        }}, "*");
+      }}
+
+      function updateFromClientY(clientY) {{
+        const rect = dragArea.getBoundingClientRect();
+        const y = clamp(clientY, rect.top, rect.bottom);
+        const rel = (rect.bottom - y) / rect.height; // 0 bottom -> 1 top
+        let v = minV + rel * (maxV - minV);
+        v = snapToStep(v);
+        value = v;
+        setUI(value);
+        emitValue(value);
+      }}
+
+      let dragging = false;
+
+      dragArea.addEventListener("mousedown", (e) => {{
+        dragging = true;
+        updateFromClientY(e.clientY);
+      }});
+
+      window.addEventListener("mousemove", (e) => {{
+        if (!dragging) return;
+        updateFromClientY(e.clientY);
+      }});
+
+      window.addEventListener("mouseup", () => {{
+        dragging = false;
+      }});
+
+      // Touch support
+      dragArea.addEventListener("touchstart", (e) => {{
+        dragging = true;
+        updateFromClientY(e.touches[0].clientY);
+      }}, {{passive:true}});
+
+      window.addEventListener("touchmove", (e) => {{
+        if (!dragging) return;
+        updateFromClientY(e.touches[0].clientY);
+      }}, {{passive:true}});
+
+      window.addEventListener("touchend", () => {{
+        dragging = false;
+      }});
+
+      // init UI
+      setUI(value);
+      emitValue(value);
+    </script>
+    """
+
+    # Return value from component
+    result = components.html(html, height=height)
+
+    # result comes as dict {"value": x} or None
+    if isinstance(result, dict) and "value" in result:
+        st.session_state[key] = int(result["value"])
+
+    return st.session_state[key]
+
+# -----------------------------
+# Digital timer
+# -----------------------------
+def days_hours_input(
+    label="Storage Time",
+    default_days=1,
+    default_hours=0,
+    max_days=21,
+    key="storage_time"
+):
+
+    if f"{key}_days" not in st.session_state:
+        st.session_state[f"{key}_days"] = default_days
+
+    if f"{key}_hours" not in st.session_state:
+        st.session_state[f"{key}_hours"] = default_hours
+
+    st.markdown(f"### ⏱️ {label}")
+
+    col_days, col_hours = st.columns(2)
+
+    with col_days:
+        days = st.number_input(
+            "Days",
+            min_value=0,
+            max_value=30,
+            value=1,
+            step=1,
+            key="days_input"
+        )
+
+    with col_hours:
+        hours = st.number_input(
+            "Hours",
+            min_value=0,
+            max_value=23,
+            value=0,
+            step=1,
+            key="hours_input"
+        )
+
+    # -------- Return total hours --------
+    time_hours = int(days) * 24 + int(hours)
+
+    st.caption(f"Total time: **{int(days)}d {int(hours)}h**  →  **{time_hours} hours**")
+
+    return time_hours
+
+# -----------------------------
 # Streamlit UI
 # -----------------------------
 
@@ -257,18 +753,18 @@ def preprocess_food_image(img_pil):
 col_logo, col_title = st.columns([1, 4], vertical_alignment="center")
 
 with col_logo:
-    st.image(logo, use_container_width=True)
+    st.image(logo)
 
 with col_title:
-    st.markdown('<div class="main-title"> Is it safe to eat?</div>', unsafe_allow_html=True, text_alignment='center')
+    st.markdown('<div class="sf-title"> Is it safe to eat?</div>', unsafe_allow_html=True, text_alignment='center')
     st.caption("SaferFood™ — Microbial risk estimates based on predictive microbiology models.", text_alignment='center')
 
 with st.sidebar:
-    st.image(logo, use_container_width=True)
+    st.image(logo)
     st.markdown("### SaferFood™")
     st.caption("AI-assisted food safety estimation")
 
-col1, col2 = st.columns([1,3])
+col1, col2, col3, col4  = st.columns([1,1,1,1], vertical_alignment="center")
 
 with col1:
     if "uploaded_file" not in st.session_state:
@@ -279,6 +775,15 @@ with col1:
     if input_method == "Upload Image":
         if st.session_state.uploaded_file is None:
 
+            st.markdown("""
+                <style>
+                /* Change the background color of the drag-and-drop area */
+                [data-testid='stFileUploaderDropzone'] {
+                    background-color: #161514; /* Red background */
+                    color: #ffffff;             /* White text color */
+                }
+                </style>
+                """, unsafe_allow_html=True)
             uploaded = st.file_uploader("Upload food image", type=["jpg", "jpeg", "png"])
 
             if uploaded is not None:
@@ -307,14 +812,37 @@ with col1:
                 st.rerun()
 
     else:
-        food = st.selectbox("Select food type:", list(FOOD_MODELS.keys()))
+        st.markdown("""
+        <style>
+        .stSelectbox div[data-baseweb="select"] > div:first-child {
+            background-color: #161514; /* Use your desired color */
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        food = st.selectbox("Select food type:", list(FOOD_MODELS.keys()), width=200)
 
 with col2:
-    temperature = st.slider("🌡Storage Temperature (°C)", -5, 40, 4)
-    time_label = st.select_slider("🕘Storage Time",
-                            options=list(STORAGE_TIMES.keys()),
-                            value="24 h" if "24 h" in STORAGE_TIMES else "1 d")
-    time_hours = STORAGE_TIMES[time_label]
+    #temperature = st.slider("🌡Storage Temperature (°C)", -5, 40, 4)
+    temperature = thermometer_slider(
+        "Storage Temperature (°C)",
+        min_value=-5,
+        max_value=40,
+        value=4,
+        step=1,
+        color="#E14F3D",
+        key="temp"
+    )
+
+    st.write("Selected temperature:", temperature, "°C")
+
+with col3:
+    time_hours = days_hours_input(
+        label="Storage Time",
+        default_days=1,
+        default_hours=0
+    )
+
+    st.write("Selected storage time:", time_hours, "hours")
 
     if "prediction_done" not in st.session_state:
         st.session_state.prediction_done = False
@@ -322,50 +850,48 @@ with col2:
     if "prediction" not in st.session_state:
         st.session_state.prediction = {}
 
-    if st.button("🍽 Should I eat it?",
-                 type="primary",
-                 use_container_width=True,
-                 key="run_pred"):
-        params = {
-            "matrixID": food,
-            "temperature": temperature,
-            "time": time_hours
-        }
+with col4:
+    with st.container(horizontal=True, horizontal_alignment="center"):
+        if st.button("🍽 Should I eat it?",
+                    type="primary",
+                    width=220,
+                    key="run_pred"):
+            params = {
+                "matrixID": food,
+                "temperature": temperature,
+                "time": time_hours
+            }
 
-        results = infer(params=params)
-        is_safe = results.get('is_safe')
-        bacterias = results.get('bacterias')
-        cooking_reco = results.get('cooking_reco')
-        fig = results.get('fig')
+            results = infer(params=params)
+            is_safe = results.get('is_safe')
+            bacterias = results.get('bacterias')
+            cooking_reco = results.get('cooking_reco')
+            fig = results.get('fig')
 
-        # Store everything needed for display + AI explanation
-        st.session_state.prediction_done = True
-        st.session_state.prediction = {
-            "food": food,
-            "temperature": temperature,
-            "time_hours": time_hours,
-            "bacterias": bacterias,
-            "is_safe": is_safe,
-            "cooking_reco": cooking_reco,
-            "fig": fig
-        }
+            # Store everything needed for display + AI explanation
+            st.session_state.prediction_done = True
+            st.session_state.prediction = {
+                "food": food,
+                "temperature": temperature,
+                "time_hours": time_hours,
+                "bacterias": bacterias,
+                "is_safe": is_safe,
+                "cooking_reco": cooking_reco,
+                "fig": fig
+            }
 
 st.markdown("---")
-
 if st.session_state.prediction_done:
     p = st.session_state.prediction
 
-    if p["is_safe"] is True:
-        st.markdown("# YOUR FOOD IS SAFE TO EAT !")
+    if p["cooking_reco"] == "raw" or "medium":
+        status = "✅ Safe"
+
+        if p["cooking_reco"] == "high":
+            status = "⚠️ Caution"
     else:
-        st.markdown("# Were you really considering eating this?")
-        st.markdown('Seriously. There is a risk of:')
-        st.markdown("\n".join(f"- {bacteria}" for bacteria in p['bacterias']))
-
-    if p["cooking_reco"] is not None:
-        st.markdown(f'Given our predictions, your {p["food"]} should be eaten at least {p["cooking_reco"]}.')
-        st.markdown(f'Please consider reaching an internal temperature of 71°C for ground meats or 74°C for poultry!')
-
+        status = "☠️❌ High risk"
+    st.markdown(f"## STATUS: {status}")
     # -----------------------------
     # DASHBOARD: Pathogen risk gauges + shelf-life
     # -----------------------------
@@ -382,16 +908,18 @@ if st.session_state.prediction_done:
     total_count = max(v[0] for v in pathogen_counts.values())
 
     # --- Gauges in 4 columns
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4 = st.columns(4, vertical_alignment="bottom")
 
     with c1:
-        st.plotly_chart(make_gauge("E. coli", pathogen_counts["E. coli"][0]), use_container_width=True)
+        st.markdown(f'Please consider reaching an internal temperature of 71°C for ground meats or 74°C for poultry!')
+        st.plotly_chart(make_gauge("E. coli", pathogen_counts["E. coli"][0]))
+
     with c2:
-        st.plotly_chart(make_gauge("Listeria", pathogen_counts["Listeria"][0]), use_container_width=True)
+        st.plotly_chart(make_gauge("Listeria", pathogen_counts["Listeria"][0]))
     with c3:
-        st.plotly_chart(make_gauge("Salmonella", pathogen_counts["Salmonella"][0]), use_container_width=True)
+        st.plotly_chart(make_gauge("Salmonella", pathogen_counts["Salmonella"][0]))
     with c4:
-        st.plotly_chart(make_gauge("Total Count", total_count), use_container_width=True)
+        st.plotly_chart(make_gauge("Total Count", total_count))
 
     # -----------------------------
     # Remaining shelf-life section
@@ -436,10 +964,10 @@ if st.session_state.prediction_done:
     # -----------------------------
     # Bacterial growth chart
     # -----------------------------
-    # if p["fig"] is not None:
-    #     st.plotly_chart(p["fig"])
-    # else:
-    #     st.warning("No figure returned by infer().")
+    if p["fig"] is not None:
+        st.plotly_chart(p["fig"])
+    else:
+        st.warning("No figure returned by infer().")
 
     if st.button("What does it mean?"):
         with st.spinner("Generating detailed explanation..."):
