@@ -1,95 +1,421 @@
-'''
-Docstring for interface.inference
-Effectue l'inférence : reçoit les données entrées par l'utilisateur, et renvoie SAFE/UNSAFE, seuil de cuisson, données, graphe
-Paramètres à fournir :
-            params = {
-                "matrixID": matrixID,
-                "temperature": temperature_value,
-                "time": time_in_hours
-            }
-'''
+"""
+Inference utilities for microbiological growth prediction.
+
+This module receives user input parameters, predicts microbial growth for all
+available organisms, evaluates food safety at the requested storage time, and
+computes the time-to-danger for each bacterium over an extended prediction horizon.
+
+Expected input:
+    params = {
+        "matrixID": matrixID,
+        "temperature": temperature_value,
+        "time": time_in_hours,
+    }
+
+Returned output:
+    result = {
+        "is_safe": is_safe,
+        "bacterias": bacterias,
+        "final_logC": final_concentration,
+        "cooking_reco": cooking_reco,
+        "times": times,
+        "logCs": predictions,
+        "fig": fig,
+        "time_to_danger_per_bacteria": time_to_danger_per_bacteria,
+    }
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Iterable, Mapping, Optional, Union
 
 import numpy as np
-import matplotlib.pyplot as plt
-#from ml_logic.baseline import ClassicalModel
+
 from ml_logic.sk_baseline import ClassicalModelRegressor
 from interface.bacteria_information import MICROORGANISM
-from . import arrhenius_parameters #arrhenius_parameters.csv was loaded in the arrhenius_parameters dataframe in interface/__init__.py (just once)
+from . import arrhenius_parameters
 from interface.graphics import plot_predictions_over_time
 
 
-MAX_PREDICTION_TIME = 1000 # Maximum prediction time (to compute the max. storage time)
+MAX_PREDICTION_TIME = 1000
+N_PLOT_POINTS = 100
+N_SHELF_LIFE_POINTS = 500
 
-#TODO : travailler le type hinting
-def infer(params):
-
-    # Paramètres fournis:
-    # params = {
-    #     "matrixID": matrixID,
-    #     "temperature": temperature_value,
-    #     "time": time_in_hours
-    # }
-
-    # Valeurs retournées par défaut
-    is_safe = None
-    bacterias = None
-    final_logC = None
-    cooking_reco = None
-    times = None
-    logCs = None
-    fig = None
-    ax = None
+PRIMARY_PARAM_NAMES = ["Initial Value", "Lag", "Maximum Rate", "Final Value"]
 
 
-    #TODO vérification des données
+def infer(params: Mapping[str, Union[str, float, int]]) -> Dict[str, Any]:
+    """
+    Run the full inference pipeline for microbiological growth prediction.
 
-    # TODO Pour l'instant : nodèle classique, remplacer par ML/AI
+    The function:
+    1. Validates user inputs.
+    2. Retrieves Arrhenius parameters for the requested food matrix.
+    3. Predicts microbial growth up to the requested storage time.
+    4. Computes final concentrations at the requested time.
+    5. Evaluates food safety and cooking recommendation.
+    6. Computes time-to-danger for each bacterium over an extended time horizon.
+    7. Generates the growth plot.
 
-    # primary_model = ClassicalModelRegressor('baranyi')
-    # secondary_model = ClassicalModelRegressor('arrhenius')
+    Parameters
+    ----------
+    params : Mapping[str, Union[str, float, int]]
+        Input parameters. Expected keys are:
+        - "matrixID": food matrix identifier
+        - "temperature": storage temperature
+        - "time": storage duration
 
-    # liste de temps pour la représentation graphique
-    times = np.linspace(
-        start = 0,
-        stop=params['time'],
-        num=100
-        )
+    Returns
+    -------
+    Dict[str, Any]
+        Dictionary containing safety assessment, predicted concentrations,
+        cooking recommendation, growth curves, figure, and time-to-danger
+        per bacterium.
+    """
+    validated_params = _validate_inference_params(params)
 
-    # Prédictions
-    # 1) récupérer les paramètres secondaires (par OrganismID)
-    organism_secondary_params = get_arrhenius_params(params, arrhenius_parameters)
-    # 2) prédire
-    predictions = predict_for_all_organisms(params, organism_secondary_params)
+    matrix_id = validated_params["matrixID"]
+    temperature = validated_params["temperature"]
+    requested_time = validated_params["time"]
 
-    # Extract final growth and compute final concentration from growth predictions for every bacteria
-    final_growth = {}
+    # Time grid for display up to user-requested storage time
+    times = np.linspace(0.0, requested_time, N_PLOT_POINTS)
+
+    # Time grid for shelf-life / time-to-danger computation
+    extended_times = np.linspace(0.0, MAX_PREDICTION_TIME, N_SHELF_LIFE_POINTS)
+
+    print(f'{arrhenius_parameters=}')
+
+    # Retrieve matrix-specific secondary-model parameters
+    organism_secondary_params = get_arrhenius_params(
+        {"matrixID": matrix_id},
+        arrhenius_parameters,
+    )
+
+    # Predict growth curves up to requested time
+    predictions = predict_for_all_organisms(
+        temperature=temperature,
+        times=times,
+        organism_secondary_params=organism_secondary_params,
+    )
+
+    # Predict growth curves up to MAX_PREDICTION_TIME for time-to-danger computation
+    extended_predictions = predict_for_all_organisms(
+        temperature=temperature,
+        times=extended_times,
+        organism_secondary_params=organism_secondary_params,
+    )
+
+    # Final concentration at requested time
+    final_growth = _extract_final_growth(predictions)
+    final_concentration = _growth_to_concentration(final_growth)
+
+    # Safety evaluation
+    is_safe, bacterias = _evaluate_safety(final_concentration)
+
+    # Cooking recommendation based on total aerobic bacteria ("ta")
+    cooking_reco = _get_cooking_recommendation(final_concentration)
+
+    # Time-to-danger per bacterium
+    time_to_danger_per_bacteria = compute_time_to_danger_per_bacteria(
+        times=extended_times,
+        predicted_growth=extended_predictions,
+    )
+
+    # Plot figure
+    fig = plot_predictions_over_time(
+        times,
+        predictions,
+        highlight_bacteria="ta",
+    )
+
+    result = {
+        "is_safe": is_safe,
+        "bacterias": bacterias,
+        "final_logC": final_concentration,
+        "cooking_reco": cooking_reco,
+        "times": times,
+        "logCs": predictions,
+        "fig": fig,
+        "time_to_danger_per_bacteria": time_to_danger_per_bacteria,
+    }
+
+    return result
+
+
+def _validate_inference_params(
+    params: Mapping[str, Union[str, float, int]]
+) -> Dict[str, Union[str, float]]:
+    """
+    Validate and normalize inference input parameters.
+
+    Parameters
+    ----------
+    params : Mapping[str, Union[str, float, int]]
+        Raw user parameters.
+
+    Returns
+    -------
+    Dict[str, Union[str, float]]
+        Normalized parameters.
+
+    Raises
+    ------
+    ValueError
+        If required parameters are missing or invalid.
+    """
+    required_keys = ["matrixID", "temperature", "time"]
+
+    for key in required_keys:
+        if key not in params:
+            raise ValueError(f"Missing required parameter: '{key}'")
+
+    matrix_id = params["matrixID"]
+    temperature = params["temperature"]
+    time = params["time"]
+
+    if matrix_id is None or str(matrix_id).strip() == "":
+        raise ValueError("Parameter 'matrixID' must be a non-empty string")
+
+    try:
+        temperature = float(temperature)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Parameter 'temperature' must be numeric") from exc
+
+    try:
+        time = float(time)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Parameter 'time' must be numeric") from exc
+
+    if time < 0:
+        raise ValueError("Parameter 'time' must be >= 0")
+
+    return {
+        "matrixID": str(matrix_id),
+        "temperature": temperature,
+        "time": time,
+    }
+
+
+def get_arrhenius_params(
+    params: Mapping[str, Any],
+    arrhenius_parameters,
+) -> Dict[Any, Dict[str, dict]]:
+    """
+    Retrieve Arrhenius parameters for a given food matrix.
+
+    Parameters
+    ----------
+    params : Mapping[str, Any]
+        Dictionary containing at least "matrixID".
+    arrhenius_parameters : pandas.DataFrame
+        DataFrame containing Arrhenius parameter dictionaries for each
+        organism and primary-model parameter.
+
+    Returns
+    -------
+    Dict[Any, Dict[str, dict]]
+        Nested dictionary:
+        {
+            organism_id: {
+                "Initial Value": {...},
+                "Lag": {...},
+                "Maximum Rate": {...},
+                "Final Value": {...},
+            },
+            ...
+        }
+
+    Raises
+    ------
+    ValueError
+        If matrixID is missing, unknown, or contains duplicate OrganismID rows.
+    """
+    matrix_id = params.get("matrixID")
+
+    if matrix_id is None:
+        raise ValueError("Parameter 'matrixID' is missing")
+
+    df_filtered = arrhenius_parameters[
+        arrhenius_parameters["MatrixID"] == matrix_id
+    ]
+
+    if df_filtered.empty:
+        raise ValueError(f"MatrixID '{matrix_id}' not found in arrhenius_parameters")
+
+    if df_filtered.duplicated(subset=["OrganismID"]).any():
+        raise ValueError(f"Duplicate OrganismID entries for MatrixID '{matrix_id}'")
+
+    cols = ["Initial Value", "Lag", "Maximum Rate", "Final Value"]
+
+    return (
+        df_filtered
+        .set_index("OrganismID")[cols]
+        .to_dict(orient="index")
+    )
+
+
+def predict_for_all_organisms(
+    *,
+    temperature: float,
+    times: Union[np.ndarray, Iterable[float]],
+    organism_secondary_params: Dict[Any, Dict[str, dict]],
+) -> Dict[Any, np.ndarray]:
+    """
+    Predict primary-model growth curves for all organisms.
+
+    For each organism:
+    1. Predict each primary-model parameter from the secondary Arrhenius model.
+    2. Build the corresponding primary Baranyi model.
+    3. Predict growth over the provided time grid.
+
+    Parameters
+    ----------
+    temperature : float
+        Storage temperature.
+    times : Union[np.ndarray, Iterable[float]]
+        Time values at which growth must be predicted.
+    organism_secondary_params : Dict[Any, Dict[str, dict]]
+        Nested dictionary of Arrhenius parameters by organism and by
+        primary-model parameter.
+
+    Returns
+    -------
+    Dict[Any, np.ndarray]
+        Dictionary mapping each OrganismID to its predicted growth curve.
+
+    Raises
+    ------
+    ValueError
+        If a required set of secondary-model parameters is missing.
+    """
+    times = np.asarray(times, dtype=float)
+
+    if times.ndim != 1:
+        raise ValueError("'times' must be a 1D array-like object")
+
+    predictions: Dict[Any, np.ndarray] = {}
+
+    for organism_id, sec_params_by_primary_param in organism_secondary_params.items():
+        primary_params: Dict[str, float] = {}
+
+        for param_name in PRIMARY_PARAM_NAMES:
+            if param_name not in sec_params_by_primary_param:
+                raise ValueError(
+                    f"Missing secondary-model parameters for OrganismID={organism_id}, "
+                    f"primary parameter='{param_name}'"
+                )
+
+            secondary_model = ClassicalModelRegressor(model="arrhenius")
+            secondary_model.fit([1, 2, 3], [1, 2, 3])
+            secondary_model.params_ = sec_params_by_primary_param[param_name]
+
+            pred_value = secondary_model.predict([temperature])
+
+            if hasattr(pred_value, "shape"):
+                pred_value = float(np.ravel(pred_value)[0])
+            else:
+                pred_value = float(pred_value)
+
+            primary_params[param_name] = pred_value
+
+        primary_model = ClassicalModelRegressor(model="baranyi")
+        primary_model.fit([1, 2, 3], [1, 2, 3])
+        primary_model.params_ = primary_params
+
+        y_pred = primary_model.predict(times)
+        predictions[organism_id] = np.asarray(y_pred, dtype=float)
+
+    return predictions
+
+
+def _extract_final_growth(predictions: Mapping[str, np.ndarray]) -> Dict[str, float]:
+    """
+    Extract the final predicted growth value for each bacterium.
+
+    Parameters
+    ----------
+    predictions : Mapping[str, np.ndarray]
+        Predicted growth curves by organism.
+
+    Returns
+    -------
+    Dict[str, float]
+        Final growth value for each organism.
+    """
+    final_growth: Dict[str, float] = {}
+
     for bacteria, values in predictions.items():
         if values is None or len(values) == 0:
             raise ValueError(f"No prediction values for bacteria '{bacteria}'")
         final_growth[bacteria] = float(values[-1])
 
-    final_concentration = {}
+    return final_growth
+
+
+def _growth_to_concentration(final_growth: Mapping[str, float]) -> Dict[str, float]:
+    """
+    Convert predicted growth values into final log concentrations.
+
+    Final concentration is computed as:
+        final concentration = predicted growth + initial concentration
+
+    Parameters
+    ----------
+    final_growth : Mapping[str, float]
+        Final predicted growth values.
+
+    Returns
+    -------
+    Dict[str, float]
+        Final log concentrations by bacterium.
+    """
+    final_concentration: Dict[str, float] = {}
+
     for bacteria, growth_value in final_growth.items():
         if bacteria not in MICROORGANISM:
-            raise ValueError(f"Bacteria '{bacteria}' not found in MICROORGANISM dictionary")
-        if "initial" not in MICROORGANISM[bacteria]:
+            raise ValueError(f"Bacteria '{bacteria}' not found in MICROORGANISM")
+
+        initial_value = MICROORGANISM[bacteria].get("initial")
+        if initial_value is None:
             raise ValueError(f"'initial' value missing for bacteria '{bacteria}'")
 
-        initial_value = MICROORGANISM[bacteria]["initial"]
         final_concentration[bacteria] = float(growth_value + initial_value)
 
-    # Check if the food is safe, and what bacterias are present at significant concentrations (>= 'raw' threshold)
+    return final_concentration
 
-    # Default conservative assumption
-    is_safe = False
+
+def _evaluate_safety(
+    final_concentration: Mapping[str, float]
+) -> tuple[bool, list[str]]:
+    """
+    Evaluate food safety and identify bacteria of concern.
+
+    A food is considered safe only if all bacteria remain strictly below their
+    'high' threshold.
+
+    Bacteria are listed in the returned 'bacterias' list when their final
+    concentration is greater than or equal to their 'raw' threshold.
+
+    Parameters
+    ----------
+    final_concentration : Mapping[str, float]
+        Final log concentrations by bacterium.
+
+    Returns
+    -------
+    tuple[bool, list[str]]
+        - is_safe: overall safety status
+        - bacterias: list of human-readable bacteria names of concern
+    """
     all_below_high = True
-    bacterias = []
+    bacterias: list[str] = []
 
     for bacteria, concentration in final_concentration.items():
         if bacteria not in MICROORGANISM:
             raise ValueError(f"Bacteria '{bacteria}' not found in MICROORGANISM")
-        data = MICROORGANISM[bacteria]
 
+        data = MICROORGANISM[bacteria]
         high_threshold = data.get("high")
         raw_threshold = data.get("raw")
         usual_name = data.get("usual_name")
@@ -101,183 +427,117 @@ def infer(params):
         if usual_name is None:
             raise ValueError(f"'usual_name' missing for bacteria '{bacteria}'")
 
-        # Safety check (strictly below high threshold required)
         if concentration >= high_threshold:
             all_below_high = False
 
-        # Raw threshold check (list risky bacteria)
         if concentration >= raw_threshold:
             bacterias.append(usual_name)
 
-    # Final safety decision
-    if all_below_high:
-        is_safe = True
+    return all_below_high, bacterias
 
 
-
-    # From final bacterial load, decide the cooking reconmmendation (but just for )
-    ta_values = MICROORGANISM['ta']
-    ta_final_concentration = final_concentration.get('ta')
-
-    if ta_final_concentration >= ta_values['high']:
-        cooking_reco = 'unsafe'
-    elif ta_final_concentration >= ta_values['medium']:
-        cooking_reco = 'high'
-    elif ta_final_concentration >= ta_values['raw']:
-        cooking_reco = 'medium'
-    else:
-        cooking_reco = 'raw'
-
-
-    #Tracé figure TODO : mettre le tracé des courbes dans une fonction à part
-    fig = plot_predictions_over_time(times, predictions, highlight_bacteria='ta')
-
-
-
-    # Package everything in a dictionary and return the data
-    result = {
-        'is_safe': is_safe,                 # Is the food safe ?
-        'bacterias': bacterias,             # What are the bacteria whose final concentration might be a concenr ?
-        'final_logC': final_concentration,  # What are the final concentrations of the various bacteria ?
-        'cooking_reco': cooking_reco,       # What are the cooking recommendations ?
-        'times': times,                     # Predicted growth : storage time
-        'logCs': predictions,               # Predicted growth : concentration of each bacteria
-        'fig': fig                          # Graphics of growth vs time
-    }
-
-    return result
-
-
-# Fonctions pour la détermination des paramètres du modèle primaire, et la modélisation
-
-def get_arrhenius_params(params: dict, arrhenius_parameters):
-    matrix_id = params.get("matrixID")
-
-    if matrix_id is None:
-        raise ValueError("Parameter 'matrixID' is missing")
-
-    # Filtrage
-    df_filtered = arrhenius_parameters[
-        arrhenius_parameters["MatrixID"] == matrix_id
-    ]
-
-    # Vérifications
-    if df_filtered.empty:
-        raise ValueError(f"MatrixID '{matrix_id}' not found in arrhenius_parameters")
-    if df_filtered.duplicated(subset=["OrganismID"]).any():
-        raise ValueError(f"Duplicate OrganismID entries for MatrixID '{matrix_id}'")
-
-    # Colonnes à récupérer
-    cols = ["Initial Value", "Lag", "Maximum Rate", "Final Value"]
-
-    # Construction d’un dictionnaire par OrganismID
-    result = (
-        df_filtered
-        .set_index("OrganismID")[cols]
-        .to_dict(orient="index")
-    )
-
-    return result
-
-from typing import Any, Dict
-
-def predict_for_all_organisms(
-    params: dict,
-    organism_secondary_params: Dict[Any, Dict[str, dict]],
-):
+def _get_cooking_recommendation(final_concentration: Mapping[str, float]) -> str:
     """
-    params: dict contenant au minimum:
-        - "temperature": float (ou array-like compatible)
-        - "time": float (ou array-like compatible)
-    organism_secondary_params:
-        dict[OrganismID] -> dict[param_name] -> dict(params du modèle arrhenius)
-        Ex:
-        {
-          "lm": {
-             "Lag": {"a": ..., "b": ...},
-             "Maximum Rate": {"a": ..., "b": ...},
-             ...
-          },
-          ...
-        }
+    Determine the cooking recommendation based on total aerobic bacteria ('ta').
 
-    Retour:
-        predictions: dict[OrganismID] -> prediction du modèle primaire (baranyi) à time
+    Rules:
+    - >= high   -> 'unsafe'
+    - >= medium -> 'high'
+    - >= raw    -> 'medium'
+    - else      -> 'raw'
+
+    Parameters
+    ----------
+    final_concentration : Mapping[str, float]
+        Final log concentrations by bacterium.
+
+    Returns
+    -------
+    str
+        Cooking recommendation level.
     """
-    temperature = params.get("temperature")
-    time =     times = np.linspace(
-        start = 0,
-        stop=params.get('time'),
-        num=100
-        )
+    if "ta" not in MICROORGANISM:
+        raise ValueError("Bacteria 'ta' not found in MICROORGANISM")
 
-    if temperature is None:
-        raise ValueError("Parameter 'temperature' is missing")
-    if time is None:
-        raise ValueError("Parameter 'time' is missing")
+    ta_values = MICROORGANISM["ta"]
+    ta_final_concentration = final_concentration.get("ta")
 
-    primary_param_names = ["Initial Value", "Lag", "Maximum Rate", "Final Value"]
+    if ta_final_concentration is None:
+        raise ValueError("Final concentration for bacteria 'ta' is missing")
 
-    predictions: Dict[Any, Any] = {}
-
-    for organism_id, sec_params_by_primary_param in organism_secondary_params.items():
-        # 1) Construire les paramètres du modèle primaire en prédisant chaque paramètre via le secondaire
-        primary_params: Dict[str, float] = {}
-
-        for p_name in primary_param_names:
-            if p_name not in sec_params_by_primary_param:
-                raise ValueError(
-                    f"Missing secondary-model parameters for OrganismID={organism_id}, "
-                    f"primary parameter='{p_name}'"
-                )
-
-            # 2) Modèle secondaire pour ce paramètre p_name
-            secondary_model = ClassicalModelRegressor(model="arrhenius")
-            secondary_model.fit([1, 2, 3], [1, 2, 3]) #On doit fitter le modèle sinon on a une erreur, même si on force les params
-
-            # On récupère les paramètres arrhenius correspondant à (organism_id, p_name)
-            secondary_model.params_ = sec_params_by_primary_param[p_name]
-
-            # 3) On prédit la valeur du paramètre du modèle primaire à la température donnée
-            # Important: selon ton implémentation, predict peut renvoyer array([[x]]) ou array([x])
-            pred_value = secondary_model.predict([temperature])
-
-            # Normalisation "souple" vers scalaire si besoin
-            try:
-                # numpy-like
-                if hasattr(pred_value, "shape"):
-                    pred_value = float(pred_value.ravel()[0])
-                else:
-                    pred_value = float(pred_value)
-            except Exception:
-                # si tu veux garder l'objet tel quel
-                pass
-
-            primary_params[p_name] = pred_value
-
-        # 4) Modèle primaire (baranyi) avec les paramètres prédits
-        primary_model = ClassicalModelRegressor(model="baranyi")
-        primary_model.fit([1, 2, 3], [1, 2, 3]) #On doit fitter le modèle sinon, erreur
-        primary_model.params_ = primary_params
-
-        # 5) Prediction à time
-        y_pred = primary_model.predict(time)
-
-        # Normalisation éventuelle
-        # try:
-        #     if hasattr(y_pred, "shape"):
-        #         y_pred = float(y_pred.ravel()[0])
-        #     else:
-        #         y_pred = float(y_pred)
-        # except Exception:
-        #     pass
-
-        predictions[organism_id] = y_pred
-
-    return predictions
+    if ta_final_concentration >= ta_values["high"]:
+        return "unsafe"
+    if ta_final_concentration >= ta_values["medium"]:
+        return "high"
+    if ta_final_concentration >= ta_values["raw"]:
+        return "medium"
+    return "raw"
 
 
-# Helper function : from an OrganismID returns the usual_name (human-friendly name) as defined in the constant MICROORGANISM
+def compute_time_to_danger_per_bacteria(
+    *,
+    times: Union[np.ndarray, Iterable[float]],
+    predicted_growth: Mapping[str, np.ndarray],
+) -> Dict[str, Optional[float]]:
+    """
+    Compute the first time at which each bacterium reaches its high threshold.
+
+    The function works on predicted growth values. For each bacterium, it first
+    reconstructs the predicted concentration by adding the bacterium-specific
+    initial concentration, then finds the first time point where the predicted
+    concentration is greater than or equal to the corresponding 'high' threshold.
+
+    Parameters
+    ----------
+    times : Union[np.ndarray, Iterable[float]]
+        Time grid used for prediction.
+    predicted_growth : Mapping[str, np.ndarray]
+        Predicted growth curves by organism.
+
+    Returns
+    -------
+    Dict[str, Optional[float]]
+        Dictionary mapping each OrganismID to:
+        - the first time at which concentration >= high threshold, or
+        - None if the threshold is never reached within the prediction horizon.
+    """
+    times = np.asarray(times, dtype=float)
+
+    if times.ndim != 1:
+        raise ValueError("'times' must be a 1D array-like object")
+
+    time_to_danger: Dict[str, Optional[float]] = {}
+
+    for bacteria, growth_values in predicted_growth.items():
+        if bacteria not in MICROORGANISM:
+            raise ValueError(f"Bacteria '{bacteria}' not found in MICROORGANISM")
+
+        growth_values = np.asarray(growth_values, dtype=float)
+
+        if len(growth_values) != len(times):
+            raise ValueError(
+                f"Length mismatch for bacteria '{bacteria}': "
+                f"{len(growth_values)} predictions for {len(times)} time points"
+            )
+
+        initial_value = MICROORGANISM[bacteria].get("initial")
+        high_threshold = MICROORGANISM[bacteria].get("high")
+
+        if initial_value is None:
+            raise ValueError(f"'initial' value missing for bacteria '{bacteria}'")
+        if high_threshold is None:
+            raise ValueError(f"'high' threshold missing for bacteria '{bacteria}'")
+
+        predicted_concentration = growth_values + float(initial_value)
+        danger_indices = np.where(predicted_concentration >= float(high_threshold))[0]
+
+        if len(danger_indices) == 0:
+            time_to_danger[bacteria] = None
+        else:
+            time_to_danger[bacteria] = float(times[danger_indices[0]])
+
+    return time_to_danger
+
 
 def get_usual_name(keys):
     """
@@ -287,8 +547,6 @@ def get_usual_name(keys):
     ----------
     keys : str or list[str]
         Bacteria code or list of bacteria codes.
-    MICROORGANISM : dict
-        Dictionary containing bacteria metadata.
 
     Returns
     -------
@@ -300,8 +558,6 @@ def get_usual_name(keys):
     ValueError
         If a key does not exist or if 'usual_name' is missing.
     """
-
-    # Normalize to list
     single_input = False
     if isinstance(keys, str):
         keys = [keys]
