@@ -24,10 +24,10 @@ def plot_predictions_over_time(
     - One curve per bacterium.
     - Optional highlighted bacterium (thicker line).
     - Colored horizontal risk bands (50% opacity) for the highlighted bacterium:
-        0 → raw      : green
-        raw → medium : yellow
-        medium → high: orange
-        > high       : red
+        bottom of y-axis → raw : green
+        raw → medium           : yellow
+        medium → high          : orange
+        high → top of y-axis   : red
 
     Parameters
     ----------
@@ -35,21 +35,41 @@ def plot_predictions_over_time(
         Storage times in hours.
 
     predictions : dict
-        dict[bacteria_code] -> predicted microbial loads (log cfu/g).
+        Dictionary mapping each bacteria code/name to a sequence of predicted
+        microbial loads (log cfu/g) at the corresponding time points.
 
     highlight_bacteria : str, optional
         Bacteria key to highlight and for which threshold zones are displayed.
 
+    base_line_width : int, default=2
+        Line width for non-highlighted curves.
+
+    highlight_line_width : int, default=5
+        Line width for the highlighted curve.
+
     Returns
     -------
     plotly.graph_objects.Figure
+        Plotly figure compatible with Streamlit.
     """
 
     if times is None or len(times) == 0:
         raise ValueError("'times' must be a non-empty sequence")
 
+    if predictions is None or len(predictions) == 0:
+        raise ValueError("'predictions' must be a non-empty dictionary")
+
     x = np.asarray(times, dtype=float)
     x0, x1 = float(np.min(x)), float(np.max(x))
+
+    # Determine y-axis limits:
+    # - min = minimum of all prediction series, rounded down to lower integer
+    # - max = 10
+    all_y = np.concatenate(
+        [np.asarray(y_values, dtype=float) for y_values in predictions.values()]
+    )
+    y_axis_min = int(np.floor(np.min(all_y)))
+    y_axis_max = 10
 
     fig = go.Figure()
 
@@ -57,7 +77,6 @@ def plot_predictions_over_time(
     # Add colored threshold zones (if highlighting)
     # ---------------------------------------------------
     if highlight_bacteria is not None:
-
         if highlight_bacteria not in predictions:
             raise ValueError(
                 f"highlight_bacteria='{highlight_bacteria}' not in predictions"
@@ -81,27 +100,54 @@ def plot_predictions_over_time(
         if high_thr is None:
             raise ValueError(f"'high' threshold missing for '{highlight_bacteria}'")
 
-        y_vals = np.asarray(predictions[highlight_bacteria], dtype=float)
-        y_max = float(np.nanmax(y_vals))
-        y_top = max(y_max, float(high_thr)) + 1.0
+        fig.add_hrect(
+            y0=y_axis_min,
+            y1=raw_thr,
+            x0=x0,
+            x1=x1,
+            fillcolor="green",
+            opacity=0.5,
+            line_width=0,
+            layer="below",
+        )
 
-        fig.add_hrect(y0=0, y1=raw_thr, x0=x0, x1=x1,
-                      fillcolor="green", opacity=0.5, line_width=0, layer="below")
+        fig.add_hrect(
+            y0=raw_thr,
+            y1=med_thr,
+            x0=x0,
+            x1=x1,
+            fillcolor="yellow",
+            opacity=0.5,
+            line_width=0,
+            layer="below",
+        )
 
-        fig.add_hrect(y0=raw_thr, y1=med_thr, x0=x0, x1=x1,
-                      fillcolor="yellow", opacity=0.5, line_width=0, layer="below")
+        fig.add_hrect(
+            y0=med_thr,
+            y1=high_thr,
+            x0=x0,
+            x1=x1,
+            fillcolor="orange",
+            opacity=0.5,
+            line_width=0,
+            layer="below",
+        )
 
-        fig.add_hrect(y0=med_thr, y1=high_thr, x0=x0, x1=x1,
-                      fillcolor="orange", opacity=0.5, line_width=0, layer="below")
-
-        fig.add_hrect(y0=high_thr, y1=y_top, x0=x0, x1=x1,
-                      fillcolor="red", opacity=0.5, line_width=0, layer="below")
+        fig.add_hrect(
+            y0=high_thr,
+            y1=y_axis_max,
+            x0=x0,
+            x1=x1,
+            fillcolor="red",
+            opacity=0.5,
+            line_width=0,
+            layer="below",
+        )
 
     # ---------------------------------------------------
     # Add growth curves
     # ---------------------------------------------------
     for bacteria, y_values in predictions.items():
-
         if bacteria not in MICROORGANISM:
             raise ValueError(f"Bacteria '{bacteria}' not found in MICROORGANISM")
 
@@ -114,7 +160,8 @@ def plot_predictions_over_time(
             )
 
         line_width = (
-            highlight_line_width if bacteria == highlight_bacteria
+            highlight_line_width
+            if bacteria == highlight_bacteria
             else base_line_width
         )
 
@@ -128,9 +175,12 @@ def plot_predictions_over_time(
             )
         )
 
+    # Explicitly fix y-axis range
+    fig.update_yaxes(range=[y_axis_min, y_axis_max])
+
     fig.update_layout(
         xaxis_title="storage time (h)",
-        yaxis_title="Microbial load (log cfu/g)",
+        yaxis_title="Microbial load (log cfu total)",
         legend_title_text="Bacteria",
         template="plotly_white",
         margin=dict(l=10, r=10, t=10, b=10),
