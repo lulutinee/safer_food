@@ -1,0 +1,158 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script>
+    // Show JS errors inside the component instead of a blank gray box
+    window.onerror = function (msg, url, line, col, err) {
+      document.body.innerHTML =
+        "<div style='padding:12px;font-family:system-ui;color:#b00020'>" +
+        "<b>Thermometer error:</b><br>" +
+        String(msg) + "<br>" +
+        (url ? (url + ":" + line + ":" + col) : "") +
+        "</div>";
+    };
+</script>
+    <script src="./streamlit-component-lib.js"></script>
+    <script>
+    if (!window.streamlitComponentLib) {
+      document.body.innerHTML =
+        "<div style='padding:12px;font-family:system-ui;color:#333'>❌ streamlit-component-lib failed to load.</div>";
+      throw new Error("streamlit-component-lib not found");
+    }
+  </script>
+    <style>
+      body { margin: 0; padding: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+      .wrap { padding: 8px 8px 0 8px; }
+      .label { font-size: 14px; font-weight: 650; margin-bottom: 8px; color:#222; }
+
+      .row { display:flex; align-items:center; gap:14px; }
+      .thermo { position: relative; width: 72px; height: 320px; }
+
+      .tube {
+        position:absolute; left:50%; transform:translateX(-50%);
+        top: 8px; width: 26px; height: 246px;
+        border-radius: 18px; border: 3px solid #444;
+        background: linear-gradient(180deg, #f7f7f7 0%, #ededed 100%);
+        overflow:hidden;
+      }
+      .bulb {
+        position:absolute; left:50%; transform:translateX(-50%);
+        bottom: 0; width: 56px; height: 56px;
+        border-radius: 50%; border: 3px solid #444;
+        background: linear-gradient(180deg, #f7f7f7 0%, #eaeaea 100%);
+        overflow:hidden;
+      }
+
+      .mercury { position:absolute; left:0; bottom:0; width:100%; height:0%; background: var(--c); }
+      .gloss {
+        position:absolute; left:18%; width:18%; top:4%; bottom:4%;
+        border-radius: 999px; background: rgba(255,255,255,0.35);
+      }
+
+      /* Drag overlay INSIDE the tube */
+      .drag {
+        position:absolute; left:50%; transform:translateX(-50%);
+        top: 8px; width: 26px; height: 246px;
+        border-radius: 18px;
+        background: rgba(0,0,0,0);
+        cursor: ns-resize;
+      }
+
+      .val { font-size: 20px; font-weight: 850; min-width: 92px; }
+      .hint { font-size: 12px; color:#666; margin-top: 2px; }
+    </style>
+  </head>
+
+  <body>
+    <div class="wrap">
+      <div class="label" id="label"></div>
+
+      <div class="row">
+        <div class="thermo" id="thermo" style="--c:#E14F3D;">
+          <div class="tube">
+            <div class="mercury" id="tubeMercury"></div>
+            <div class="gloss"></div>
+          </div>
+
+          <div class="bulb">
+            <div class="mercury" id="bulbMercury" style="height:100%; border-radius:50%;"></div>
+            <div class="gloss"></div>
+          </div>
+
+          <div class="drag" id="drag"></div>
+        </div>
+
+        <div>
+          <div class="val"><span id="valText">4</span> °C</div>
+          <div class="hint">Drag inside the thermometer</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const Streamlit = window.streamlitComponentLib.Streamlit;
+      const drag = document.getElementById("drag");
+      const tubeMercury = document.getElementById("tubeMercury");
+      const valText = document.getElementById("valText");
+      const labelEl = document.getElementById("label");
+      const thermoEl = document.getElementById("thermo");
+
+      let minV = -5, maxV = 40, step = 1;
+      let value = 4;
+
+      function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
+      function snap(v){
+        const s = Math.round((v - minV)/step) * step + minV;
+        return clamp(s, minV, maxV);
+      }
+      function pct(v){ return ((v - minV) / (maxV - minV)) * 100; }
+
+      function setUI(v){
+        tubeMercury.style.height = pct(v) + "%";
+        valText.textContent = v;
+      }
+
+      function setValue(v){
+        value = snap(v);
+        setUI(value);
+        Streamlit.setComponentValue(value);  // ✅ THIS sends value back to Python
+      }
+
+      function updateFromClientY(clientY){
+        const r = drag.getBoundingClientRect();
+        const y = clamp(clientY, r.top, r.bottom);
+        const rel = (r.bottom - y) / r.height; // bottom->0, top->1
+        setValue(minV + rel * (maxV - minV));
+      }
+
+      let dragging = false;
+
+      drag.addEventListener("mousedown", (e)=>{ dragging = true; updateFromClientY(e.clientY); });
+      window.addEventListener("mousemove", (e)=>{ if(dragging) updateFromClientY(e.clientY); });
+      window.addEventListener("mouseup", ()=>{ dragging = false; });
+
+      drag.addEventListener("touchstart", (e)=>{ dragging = true; updateFromClientY(e.touches[0].clientY); }, {passive:true});
+      window.addEventListener("touchmove", (e)=>{ if(dragging) updateFromClientY(e.touches[0].clientY); }, {passive:true});
+      window.addEventListener("touchend", ()=>{ dragging = false; });
+
+      // Receive args from Python
+      Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, (event) => {
+        const args = event.detail.args || {};
+        labelEl.textContent = args.label ?? "Temperature";
+        minV = Number(args.min_value ?? -5);
+        maxV = Number(args.max_value ?? 40);
+        step = Number(args.step ?? 1);
+        thermoEl.style.setProperty("--c", args.color ?? "#E14F3D");
+
+        // Use Python-provided current value as source of truth
+        value = Number(args.value ?? value);
+        setUI(value);
+
+        Streamlit.setFrameHeight(360);
+      });
+
+      Streamlit.setComponentReady();
+    </script>
+  </body>
+</html>
