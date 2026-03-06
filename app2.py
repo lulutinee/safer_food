@@ -881,21 +881,17 @@ with col4:
             }
 
 st.markdown("---")
-
 if st.session_state.prediction_done:
     p = st.session_state.prediction
 
-    if p["is_safe"] is True:
-        st.markdown("# YOUR FOOD IS SAFE TO EAT !")
+    if p["cooking_reco"] == "raw" or "medium":
+        status = "✅ Safe"
+
+        if p["cooking_reco"] == "high":
+            status = "⚠️ Caution"
     else:
-        st.markdown("# Were you really considering eating this?")
-        st.markdown('Seriously. There is a risk of:')
-        st.markdown("\n".join(f"- {bacteria}" for bacteria in p['bacterias']))
-
-    if p["cooking_reco"] is not None:
-        st.markdown(f'Given our predictions, your {p["food"]} should be eaten at least {p["cooking_reco"]}.')
-        st.markdown(f'Please consider reaching an internal temperature of 71°C for ground meats or 74°C for poultry!')
-
+        status = "☠️❌ High risk"
+    st.markdown(f"## STATUS: {status}")
     # -----------------------------
     # DASHBOARD: Pathogen risk gauges + shelf-life
     # -----------------------------
@@ -912,10 +908,12 @@ if st.session_state.prediction_done:
     total_count = max(v[0] for v in pathogen_counts.values())
 
     # --- Gauges in 4 columns
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4 = st.columns(4, vertical_alignment="bottom")
 
     with c1:
+        st.markdown(f'Please consider reaching an internal temperature of 71°C for ground meats or 74°C for poultry!')
         st.plotly_chart(make_gauge("E. coli", pathogen_counts["E. coli"][0]))
+
     with c2:
         st.plotly_chart(make_gauge("Listeria", pathogen_counts["Listeria"][0]))
     with c3:
@@ -966,10 +964,10 @@ if st.session_state.prediction_done:
     # -----------------------------
     # Bacterial growth chart
     # -----------------------------
-    # if p["fig"] is not None:
-    #     st.plotly_chart(p["fig"])
-    # else:
-    #     st.warning("No figure returned by infer().")
+    if p["fig"] is not None:
+        st.plotly_chart(p["fig"])
+    else:
+        st.warning("No figure returned by infer().")
 
     if st.button("What does it mean?"):
         with st.spinner("Generating detailed explanation..."):
