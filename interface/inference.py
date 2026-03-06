@@ -84,7 +84,6 @@ def infer(params: Mapping[str, Union[str, float, int]]) -> Dict[str, Any]:
     # Time grid for shelf-life / time-to-danger computation
     extended_times = np.linspace(0.0, MAX_PREDICTION_TIME, N_SHELF_LIFE_POINTS)
 
-    print(f'{arrhenius_parameters=}')
 
     # Retrieve matrix-specific secondary-model parameters
     organism_secondary_params = get_arrhenius_params(
@@ -266,8 +265,11 @@ def predict_for_all_organisms(
 
     For each organism:
     1. Predict each primary-model parameter from the secondary Arrhenius model.
-    2. Build the corresponding primary Baranyi model.
-    3. Predict growth over the provided time grid.
+    2. Override:
+       - "Initial Value" with MICROORGANISM[organism_id]["initial"]
+       - "Final Value" with 9.0
+    3. Build the corresponding primary Baranyi model.
+    4. Predict growth over the provided time grid.
 
     Parameters
     ----------
@@ -287,7 +289,8 @@ def predict_for_all_organisms(
     Raises
     ------
     ValueError
-        If a required set of secondary-model parameters is missing.
+        If a required set of secondary-model parameters is missing, or if the
+        organism is missing from MICROORGANISM.
     """
     times = np.asarray(times, dtype=float)
 
@@ -319,6 +322,16 @@ def predict_for_all_organisms(
 
             primary_params[param_name] = pred_value
 
+        if organism_id not in MICROORGANISM:
+            raise ValueError(f"Bacteria '{organism_id}' not found in MICROORGANISM")
+
+        initial_value = MICROORGANISM[organism_id].get("initial")
+        if initial_value is None:
+            raise ValueError(f"'initial' value missing for bacteria '{organism_id}'")
+
+        primary_params["Initial Value"] = float(initial_value)
+        primary_params["Final Value"] = 9.0
+
         primary_model = ClassicalModelRegressor(model="baranyi")
         primary_model.fit([1, 2, 3], [1, 2, 3])
         primary_model.params_ = primary_params
@@ -331,17 +344,17 @@ def predict_for_all_organisms(
 
 def _extract_final_growth(predictions: Mapping[str, np.ndarray]) -> Dict[str, float]:
     """
-    Extract the final predicted growth value for each bacterium.
+    Extract the final predicted value for each bacterium.
 
     Parameters
     ----------
     predictions : Mapping[str, np.ndarray]
-        Predicted growth curves by organism.
+        Predicted curves by organism.
 
     Returns
     -------
     Dict[str, float]
-        Final growth value for each organism.
+        Final predicted value for each organism.
     """
     final_growth: Dict[str, float] = {}
 
@@ -355,20 +368,20 @@ def _extract_final_growth(predictions: Mapping[str, np.ndarray]) -> Dict[str, fl
 
 def _growth_to_concentration(final_growth: Mapping[str, float]) -> Dict[str, float]:
     """
-    Convert predicted growth values into final log concentrations.
+    Convert final predicted values into final concentrations.
 
-    Final concentration is computed as:
-        final concentration = predicted growth + initial concentration
+    In the current implementation, predicted values are already interpreted as
+    final concentrations. No initial value is added.
 
     Parameters
     ----------
     final_growth : Mapping[str, float]
-        Final predicted growth values.
+        Final predicted values.
 
     Returns
     -------
     Dict[str, float]
-        Final log concentrations by bacterium.
+        Final concentrations by bacterium.
     """
     final_concentration: Dict[str, float] = {}
 
@@ -376,11 +389,7 @@ def _growth_to_concentration(final_growth: Mapping[str, float]) -> Dict[str, flo
         if bacteria not in MICROORGANISM:
             raise ValueError(f"Bacteria '{bacteria}' not found in MICROORGANISM")
 
-        initial_value = MICROORGANISM[bacteria].get("initial")
-        if initial_value is None:
-            raise ValueError(f"'initial' value missing for bacteria '{bacteria}'")
-
-        final_concentration[bacteria] = float(growth_value + initial_value)
+        final_concentration[bacteria] = float(growth_value)
 
     return final_concentration
 
@@ -482,17 +491,15 @@ def compute_time_to_danger_per_bacteria(
     """
     Compute the first time at which each bacterium reaches its high threshold.
 
-    The function works on predicted growth values. For each bacterium, it first
-    reconstructs the predicted concentration by adding the bacterium-specific
-    initial concentration, then finds the first time point where the predicted
-    concentration is greater than or equal to the corresponding 'high' threshold.
+    In the current implementation, predicted values are already interpreted as
+    concentrations. No initial value is added before comparison to the threshold.
 
     Parameters
     ----------
     times : Union[np.ndarray, Iterable[float]]
         Time grid used for prediction.
     predicted_growth : Mapping[str, np.ndarray]
-        Predicted growth curves by organism.
+        Predicted curves by organism.
 
     Returns
     -------
@@ -520,16 +527,11 @@ def compute_time_to_danger_per_bacteria(
                 f"{len(growth_values)} predictions for {len(times)} time points"
             )
 
-        initial_value = MICROORGANISM[bacteria].get("initial")
         high_threshold = MICROORGANISM[bacteria].get("high")
-
-        if initial_value is None:
-            raise ValueError(f"'initial' value missing for bacteria '{bacteria}'")
         if high_threshold is None:
             raise ValueError(f"'high' threshold missing for bacteria '{bacteria}'")
 
-        predicted_concentration = growth_values + float(initial_value)
-        danger_indices = np.where(predicted_concentration >= float(high_threshold))[0]
+        danger_indices = np.where(growth_values >= float(high_threshold))[0]
 
         if len(danger_indices) == 0:
             time_to_danger[bacteria] = None
