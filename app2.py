@@ -43,11 +43,6 @@ LOGO2_PATH = "logo4.PNG"  # <- your file name
 logo2 = Image.open(LOGO2_PATH)
 
 st.set_page_config(page_title="SaferFood", page_icon=logo2, layout="wide")
-# st.set_page_config(
-#     page_title="AI Food Safety Predictor",
-#     page_icon="🧪",
-#     layout="wide"
-# )
 
 # -----------------------------
 # Styling
@@ -328,14 +323,6 @@ food_model = load_food_model()
 # -----------------------------
 # Scientific Functions
 # -----------------------------
-def ratkowsky_growth_rate(T, Tmin, b):
-    if T <= Tmin:
-        return 0
-    return (b * (T - Tmin))**2
-
-def logistic_growth(N0, Nmax, mu, t):
-    return Nmax / (1 + ((Nmax - N0)/N0)*np.exp(-mu*t))
-
 def classify_risk(N, organism):
     thresholds = MICROORGANISM[organism]
 
@@ -407,32 +394,11 @@ def make_gauge(title, N, organism):
     ))
 
     fig.update_layout(
-        height=300,
+        height=310,
         margin=dict(l=20, r=20, t=50, b=10)
     )
 
     return fig
-
-def time_to_reach_threshold_logistic(N0, Nmax, mu, N_thresh):
-    """
-    Solve logistic growth for t when N(t) = N_thresh.
-    Returns np.inf if mu==0 or if threshold not reachable.
-    """
-    if mu <= 0:
-        return np.inf
-    if N_thresh <= N0:
-        return 0.0
-    if N_thresh >= Nmax:
-        return np.inf
-
-    # Logistic: N(t) = Nmax / (1 + A*exp(-mu*t)), A = (Nmax-N0)/N0
-    A = (Nmax - N0) / N0
-    # Rearranged:
-    # t = -(1/mu) * ln( ((Nmax/N_thresh)-1) / A )
-    inside = ((Nmax / N_thresh) - 1.0) / A
-    if inside <= 0:
-        return np.inf
-    return float(-(1.0 / mu) * np.log(inside))
 
 # Map AI label to microbial category
 def map_food_category(label):
@@ -489,7 +455,7 @@ def thermometer_slider(
 
     # Use the last value as default (so it persists on reruns)
     value = st.session_state[key]
-
+    value = st.slider('Storage Temperature', min_value=min_value, max_value=max_value)
     html = f"""
     <style>
       .thermo-wrap {{
@@ -1019,6 +985,10 @@ if st.session_state.prediction_done:
 
     with c1:
         st.plotly_chart(make_gauge("E. coli", pathogen_counts["ec"], "ec"))
+        if p["fig"] is not None:
+            st.plotly_chart(p["fig"])
+        else:
+            st.warning("No figure returned by infer().")
     with c2:
         st.plotly_chart(make_gauge("Listeria", pathogen_counts["lm"], "lm"))
     with c3:
@@ -1076,11 +1046,6 @@ if st.session_state.prediction_done:
     # -----------------------------
     # Bacterial growth chart
     # -----------------------------
-    if p["fig"] is not None:
-        st.plotly_chart(p["fig"])
-    else:
-        st.warning("No figure returned by infer().")
-
     if st.button("What does it mean?"):
         with st.spinner("Generating detailed explanation..."):
             explanations = explanations.risk_explanation(p["bacterias"], max_output_tokens=2000)
@@ -1088,9 +1053,23 @@ if st.session_state.prediction_done:
         st.markdown("### 🧠 AI Detailed Explanation")
         st.write(explanations)
 
-    if st.button("Recipe suggestions"):
-            with st.spinner("Looking for yummy recipes"):
-                recipes = recipes.recipe_suggestion(ingredient=p["food"], cooking=p["cooking_reco"], provider='auto', max_output_tokens=5000)
+    st.markdown("## Recipe suggestions")
+    if p["cooking_reco"] == "raw" and p['food'] == "poultry":
+        cooking_choice = ["Grilled", "Mijoté"]
+    elif p["cooking_reco"] == "raw":
+        cooking_choice = ["Tartare", "Grilled", "Mijoté"]
+    elif p["cooking_reco"] == "medium":
+        cooking_choice = ["Grilled", "Mijoté"]
+    else:
+        cooking_choice = ["Mijoté"]
 
-            st.markdown(f'Given our predictions, the recommended cooking temperature for your {p["food"]} is: {p["cooking_reco"]}')
+    cooking_dict = {'Tartare': 'raw',
+                   'Grilled': 'medium',
+                   'Mijoté': 'high'}
+
+    recipe_cooking = cooking_dict[st.pills('What kind of recipes would you like?', options=cooking_choice)]
+    st.markdown(recipe_cooking)
+    if st.button("Find recipes"):
+            with st.spinner("Looking for yummy recipes"):
+                recipes = recipes.recipe_suggestion(ingredient=p["food"], cooking=recipe_cooking, provider='auto', max_output_tokens=5000)
             st.markdown(recipes)
