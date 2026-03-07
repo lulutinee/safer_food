@@ -233,9 +233,9 @@ def infer(params: Mapping[str, Union[str, float, int]]) -> Dict[str, Any]:
 
     # Plot figure
     fig = plot_predictions_over_time(
-        times,
-        predictions,
-        highlight_bacteria="ta",
+        extended_times,
+        extended_predictions,
+        storage_time=params.get('time')
     )
 
     result = {
