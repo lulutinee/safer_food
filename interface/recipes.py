@@ -47,9 +47,10 @@ Return exactly 5 recipe suggestions that:
 For each recipe, provide:
 
 1. Recipe name
-2. Short description (2–3 sentences)
-3. Key ingredients (bullet list)
-4. Basic preparation steps (concise, 4–6 steps)
+2. Photo of the recipe
+3. Short description (2–3 sentences)
+4. Key ingredients (bullet list)
+5. Basic preparation steps (concise, 4–6 steps)
 
 Formatting rules:
 - Use clear section headers.
@@ -82,10 +83,11 @@ Return exactly 5 recipe suggestions that:
 For each recipe, provide:
 
 1. Recipe name
-2. Short description (2–3 sentences)
-3. Key ingredients (bullet list)
-4. Cooking method with explicit temperature range (must clearly state a temperature between 70°C and 110°C)
-5. Basic preparation steps (4–6 concise steps)
+2. Photo of the recipe
+3. Short description (2–3 sentences)
+4. Key ingredients (bullet list)
+5. Cooking method with explicit temperature range (must clearly state a temperature between 70°C and 110°C)
+6. Basic preparation steps (4–6 concise steps)
 
 Formatting rules:
 - Use clear section headers.
@@ -118,10 +120,11 @@ Return exactly 5 recipe suggestions that:
 For each recipe, provide:
 
 1. Recipe name
-2. Short description (2–3 sentences)
-3. Key ingredients (bullet list)
-4. Cooking method with explicit temperature indication (must clearly state a temperature >115°C)
-5. Basic preparation steps (4–6 concise steps)
+2. Photo of the recipe
+3. Short description (2–3 sentences)
+4. Key ingredients (bullet list)
+5. Cooking method with explicit temperature indication (must clearly state a temperature >115°C)
+6. Basic preparation steps (4–6 concise steps)
 
 Formatting rules:
 - Use clear section headers.
