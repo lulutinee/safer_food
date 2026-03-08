@@ -1,0 +1,21 @@
+MatrixID	OrganismID	Temperature	Initial Value	Lag	Maximum Rate	Final Value
+beef	ec	4.0	0.0	120.0	0.015	9.0
+beef	ec	6.0	0.0	90.0	0.02	9.0
+beef	ec	10.0	0.0	40.0	0.05	9.0
+beef	ec	20.0	0.0	8.0	0.18	9.0
+beef	ec	37.0	0.0	2.0	0.35	9.0
+beef	lm	4.0	0.0	100.0	0.012	9.0
+beef	lm	6.0	0.0	70.0	0.018	9.0
+beef	lm	10.0	0.0	30.0	0.045	9.0
+beef	lm	20.0	0.0	6.0	0.15	9.0
+beef	lm	37.0	0.0	2.0	0.28	9.0
+beef	ss	4.0	0.0	140.0	0.01	9.0
+beef	ss	6.0	0.0	100.0	0.016	9.0
+beef	ss	10.0	0.0	45.0	0.04	9.0
+beef	ss	20.0	0.0	10.0	0.14	9.0
+beef	ss	37.0	0.0	3.0	0.3	9.0
+beef	ta	4.0	0.0	80.0	0.02	9.0
+beef	ta	6.0	0.0	60.0	0.03	9.0
+beef	ta	10.0	0.0	20.0	0.07	9.0
+beef	ta	20.0	0.0	4.0	0.22	9.0
+beef	ta	37.0	0.0	1.0	0.45	9.0

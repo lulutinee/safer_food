@@ -420,7 +420,7 @@ def predict_for_all_organisms(
                 )
 
             secondary_model = ClassicalModelRegressor(model="arrhenius")
-            secondary_model.fit([1, 2, 3], [1, 2, 3])
+            secondary_model.fit([1, 2, 3, 4, 5], [1, 2, 3, 5, 9])
             secondary_model.params_ = sec_params_by_primary_param[param_name]
 
             pred_value = secondary_model.predict([temperature])
@@ -443,7 +443,7 @@ def predict_for_all_organisms(
         primary_params["Final Value"] = 9.0
 
         primary_model = ClassicalModelRegressor(model="baranyi")
-        primary_model.fit([1, 2, 3], [1, 2, 3])
+        primary_model.fit([1, 2, 3, 4, 5], [1, 1, 3, 5, 5])
         primary_model.params_ = primary_params
 
         y_pred = primary_model.predict(times)

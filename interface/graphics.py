@@ -359,6 +359,8 @@ def plot_predictions_over_time(
         )
 
         fig.update_yaxes(range=[y_axis_min, y_axis_max])
+
+        fig.update_yaxes(range=[y_axis_min, y_axis_max])
         fig.update_xaxes(range=[x0, x1], constrain="domain")
 
         fig.update_layout(
