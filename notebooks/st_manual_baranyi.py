@@ -64,25 +64,220 @@ def _state_key(matrix_id: str, organism_id: str, temperature: float, param_name:
     return f"{matrix_id}__{organism_id}__{temperature}__{param_name}"
 
 
-def initialize_session_state(matrix_id: str) -> None:
+def build_default_manual_params_df() -> pd.DataFrame:
     """
-    Initialize all slider values for the selected matrix in Streamlit session state.
+    Build the complete default manual-parameter dataframe for all possible
+    MatrixID x OrganismID x Temperature combinations.
+
+    Returns
+    -------
+    pd.DataFrame
+        Dataframe with columns:
+        - MatrixID
+        - OrganismID
+        - Temperature
+        - Initial Value
+        - Lag
+        - Maximum Rate
+        - Final Value
     """
-    for organism_id in ORGANISM_IDS:
-        for temperature in TEMPERATURES:
-            lag_key = _state_key(matrix_id, organism_id, temperature, "Lag")
-            rate_key = _state_key(matrix_id, organism_id, temperature, "Maximum Rate")
+    rows = []
 
-            if lag_key not in st.session_state:
-                st.session_state[lag_key] = float(DEFAULT_LAG[organism_id][temperature])
+    for matrix_id in MATRIX_IDS:
+        for organism_id in ORGANISM_IDS:
+            for temperature in TEMPERATURES:
+                rows.append(
+                    {
+                        "MatrixID": matrix_id,
+                        "OrganismID": organism_id,
+                        "Temperature": float(temperature),
+                        "Initial Value": DEFAULT_INITIAL_VALUE,
+                        "Lag": float(DEFAULT_LAG[organism_id][temperature]),
+                        "Maximum Rate": float(DEFAULT_MAX_RATE[organism_id][temperature]),
+                        "Final Value": DEFAULT_FINAL_VALUE,
+                    }
+                )
 
-            if rate_key not in st.session_state:
-                st.session_state[rate_key] = float(DEFAULT_MAX_RATE[organism_id][temperature])
+    return pd.DataFrame(rows)
+
+
+def load_saved_manual_params(path: Path) -> pd.DataFrame | None:
+    """
+    Load the saved manual Baranyi parameters file if it exists.
+
+    If the file contains multiple rows for the same MatrixID x OrganismID x Temperature,
+    the last occurrence is kept.
+
+    Parameters
+    ----------
+    path : Path
+        Path to the saved manual-parameter file.
+
+    Returns
+    -------
+    pd.DataFrame | None
+        Loaded dataframe, or None if the file does not exist.
+    """
+    if not path.exists():
+        return None
+
+    df = pd.read_csv(path, sep="\t")
+
+    required_cols = [
+        "MatrixID",
+        "OrganismID",
+        "Temperature",
+        "Initial Value",
+        "Lag",
+        "Maximum Rate",
+        "Final Value",
+    ]
+
+    missing = [col for col in required_cols if col not in df.columns]
+    if missing:
+        raise ValueError(
+            f"Le fichier '{path}' ne contient pas les colonnes requises : {missing}"
+        )
+
+    df = df.copy()
+    df["MatrixID"] = df["MatrixID"].astype(str)
+    df["OrganismID"] = df["OrganismID"].astype(str)
+    df["Temperature"] = df["Temperature"].astype(float)
+    df["Initial Value"] = df["Initial Value"].astype(float)
+    df["Lag"] = df["Lag"].astype(float)
+    df["Maximum Rate"] = df["Maximum Rate"].astype(float)
+    df["Final Value"] = df["Final Value"].astype(float)
+
+    df = df.drop_duplicates(
+        subset=["MatrixID", "OrganismID", "Temperature"],
+        keep="last",
+    )
+
+    return df
+
+
+def merge_default_and_loaded_params(default_df: pd.DataFrame, loaded_df: pd.DataFrame | None) -> pd.DataFrame:
+    """
+    Merge the full default dataframe with the loaded dataframe.
+
+    When loaded values exist for a given MatrixID x OrganismID x Temperature,
+    they replace the default values.
+
+    Parameters
+    ----------
+    default_df : pd.DataFrame
+        Complete default dataframe.
+    loaded_df : pd.DataFrame | None
+        Loaded dataframe from disk, or None.
+
+    Returns
+    -------
+    pd.DataFrame
+        Complete merged dataframe.
+    """
+    if loaded_df is None:
+        return default_df.copy()
+
+    key_cols = ["MatrixID", "OrganismID", "Temperature"]
+    value_cols = ["Initial Value", "Lag", "Maximum Rate", "Final Value"]
+
+    merged = default_df.merge(
+        loaded_df[key_cols + value_cols],
+        on=key_cols,
+        how="left",
+        suffixes=("", "_loaded"),
+    )
+
+    for col in value_cols:
+        loaded_col = f"{col}_loaded"
+        merged[col] = merged[loaded_col].combine_first(merged[col])
+
+    cols_to_drop = [f"{col}_loaded" for col in value_cols]
+    merged = merged.drop(columns=cols_to_drop)
+
+    return merged
+
+
+def set_reference_params_in_session(reference_df: pd.DataFrame) -> None:
+    """
+    Write the reference dataframe values into Streamlit session state.
+
+    Parameters
+    ----------
+    reference_df : pd.DataFrame
+        Complete reference dataframe containing one row per
+        MatrixID x OrganismID x Temperature.
+    """
+    for row in reference_df.itertuples(index=False):
+        lag_key = _state_key(row.MatrixID, row.OrganismID, row.Temperature, "Lag")
+        rate_key = _state_key(row.MatrixID, row.OrganismID, row.Temperature, "Maximum Rate")
+
+        st.session_state[lag_key] = float(row.Lag)
+        st.session_state[rate_key] = float(row._asdict()["Maximum Rate"])
+
+
+def initialize_session_state() -> None:
+    """
+    Initialize Streamlit session state with the complete default parameter grid.
+
+    This initialization is performed only once per session, unless the user
+    explicitly clicks the 'Charger' button to replace values from disk.
+    """
+    if "manual_reference_params" not in st.session_state:
+        reference_df = build_default_manual_params_df()
+        st.session_state["manual_reference_params"] = reference_df
+        set_reference_params_in_session(reference_df)
+
+
+def reload_reference_from_file() -> tuple[bool, str]:
+    """
+    Reload the complete reference parameter grid from BARANYI_OUTPUT_PATH.
+
+    Default values are created first for all MatrixID x OrganismID x Temperature
+    combinations. When the saved file exists, matching rows replace the defaults.
+
+    Returns
+    -------
+    tuple[bool, str]
+        - success flag
+        - status message
+    """
+    try:
+        default_df = build_default_manual_params_df()
+        loaded_df = load_saved_manual_params(BARANYI_OUTPUT_PATH)
+        reference_df = merge_default_and_loaded_params(default_df, loaded_df)
+
+        st.session_state["manual_reference_params"] = reference_df
+        set_reference_params_in_session(reference_df)
+
+        if loaded_df is None:
+            return True, (
+                f"Aucun fichier trouvé à '{BARANYI_OUTPUT_PATH}'. "
+                "Les valeurs par défaut ont été conservées."
+            )
+
+        return True, (
+            f"Valeurs chargées depuis '{BARANYI_OUTPUT_PATH}' "
+            "et utilisées comme valeurs par défaut."
+        )
+    except Exception as exc:
+        return False, f"Erreur lors du chargement : {exc}"
 
 
 def get_manual_primary_params(matrix_id: str) -> pd.DataFrame:
     """
-    Build the manual Baranyi-parameter dataframe from the current slider values.
+    Build the manual Baranyi-parameter dataframe from the current slider values
+    for the selected MatrixID.
+
+    Parameters
+    ----------
+    matrix_id : str
+        Selected food matrix.
+
+    Returns
+    -------
+    pd.DataFrame
+        Long-format dataframe with one row per OrganismID x Temperature.
     """
     rows = []
 
@@ -411,11 +606,19 @@ def append_tsv(df: pd.DataFrame, path: Path) -> None:
 # UI rendering helpers
 # =============================================================================
 
-def render_top_controls() -> Tuple[float, str, bool]:
+def render_top_controls() -> Tuple[float, str, bool, bool]:
     """
     Render the top control row of the application.
+
+    Returns
+    -------
+    tuple[float, str, bool, bool]
+        - duration_h
+        - matrix_id
+        - load_clicked
+        - save_clicked
     """
-    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([1.2, 1.2, 0.8])
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4 = st.columns([1.2, 1.2, 0.8, 0.8])
 
     with ctrl_col1:
         duration_h = st.number_input(
@@ -434,24 +637,23 @@ def render_top_controls() -> Tuple[float, str, bool]:
 
     with ctrl_col3:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+        load_clicked = st.button("Charger", use_container_width=True)
+
+    with ctrl_col4:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         save_clicked = st.button("Enregistrer", type="primary", use_container_width=True)
 
-    return float(duration_h), matrix_id, save_clicked
+    return float(duration_h), matrix_id, load_clicked, save_clicked
 
 
 def render_organism_column(organism_id: str, duration_h: float, matrix_id: str) -> None:
     """
     Render one bacterium column in a compact layout.
 
-    Layout:
-    - title
-    - growth figure
-    - compact parameter area
-    For each temperature:
+    For each temperature, controls are shown on one row:
     - temperature label
     - Lag slider
     - Maximum Rate slider
-    all on the same row
     """
     label = MICROORGANISM.get(organism_id, {}).get("usual_name", organism_id)
 
@@ -484,8 +686,8 @@ def render_organism_column(organism_id: str, duration_h: float, matrix_id: str) 
         with row_col2:
             st.slider(
                 label=f"Lag ({temperature}°C)",
-                min_value=1e-5,
-                max_value=500.0,
+                min_value=float(1e-5),
+                max_value=float(duration_h),
                 step=1.0,
                 key=_state_key(matrix_id, organism_id, temperature, "Lag"),
                 label_visibility="collapsed",
@@ -494,8 +696,8 @@ def render_organism_column(organism_id: str, duration_h: float, matrix_id: str) 
         with row_col3:
             st.slider(
                 label=f"Maximum Rate ({temperature}°C)",
-                min_value=1e-10,
-                max_value=1.75,
+                min_value=float(1e-10),
+                max_value=float(1.0),
                 step=0.001,
                 key=_state_key(matrix_id, organism_id, temperature, "Maximum Rate"),
                 label_visibility="collapsed",
@@ -515,19 +717,43 @@ def main() -> None:
     - Top row:
         - growth duration input
         - MatrixID selector
+        - load button
         - save button
     - Main area:
         - 4 columns, one per bacterium
         - each column contains:
             - the growth graph
             - the compact control grid for all temperatures
+
+    Load behavior
+    -------------
+    When 'Charger' is clicked:
+    1. a complete default dataframe is created for all possible
+       MatrixID x OrganismID x Temperature combinations
+    2. if BARANYI_OUTPUT_PATH exists, matching saved values replace defaults
+    3. session-state values are updated
+
+    Save behavior
+    -------------
+    When 'Enregistrer' is clicked:
+    1. the current manual Baranyi parameters for the selected MatrixID are
+       compiled and appended to `manual_baranyi_parameters.csv`
+    2. Arrhenius models are fitted for each MatrixID x OrganismID combination,
+       then appended to `manual_arrhenius_V2.csv`
     """
     st.set_page_config(layout="wide", page_title="Manual Baranyi tuning")
     st.title("Manual tuning of Baranyi parameters")
 
-    duration_h, matrix_id, save_clicked = render_top_controls()
+    initialize_session_state()
 
-    initialize_session_state(matrix_id)
+    duration_h, matrix_id, load_clicked, save_clicked = render_top_controls()
+
+    if load_clicked:
+        success, message = reload_reference_from_file()
+        if success:
+            st.success(message)
+        else:
+            st.error(message)
 
     st.markdown("---")
 
