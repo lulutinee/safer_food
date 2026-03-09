@@ -484,7 +484,7 @@ def render_organism_column(organism_id: str, duration_h: float, matrix_id: str) 
         with row_col2:
             st.slider(
                 label=f"Lag ({temperature}°C)",
-                min_value=0.0,
+                min_value=1e-5,
                 max_value=500.0,
                 step=1.0,
                 key=_state_key(matrix_id, organism_id, temperature, "Lag"),
@@ -494,7 +494,7 @@ def render_organism_column(organism_id: str, duration_h: float, matrix_id: str) 
         with row_col3:
             st.slider(
                 label=f"Maximum Rate ({temperature}°C)",
-                min_value=0.0,
+                min_value=1e-10,
                 max_value=1.75,
                 step=0.001,
                 key=_state_key(matrix_id, organism_id, temperature, "Maximum Rate"),
