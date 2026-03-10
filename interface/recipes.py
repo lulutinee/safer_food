@@ -290,7 +290,10 @@ def recipe_suggestion(
     max_output_tokens: int = 800,
     image_model: str = "gemini-2.5-flash-image",
     image_location: Optional[str] = None,
-) -> Dict[str, Any]:
+    gemini_api_key: Optional[str] = None,
+    gcp_project: Optional[str] = None,
+    gcp_region: Optional[str] = None,
+    ) -> Dict[str, Any]:
     """
     Generate one recipe suggestion and one AI-generated image.
 
@@ -304,10 +307,6 @@ def recipe_suggestion(
         - The returned PIL image can be used directly with Streamlit:
             st.image(result["image"])
     """
-    gemini_api_key: Optional[str] = None,
-    gcp_project: Optional[str] = None,
-    gcp_region: Optional[str] = None,
-) -> str:
 
     selected_provider = _select_provider(provider)
 
