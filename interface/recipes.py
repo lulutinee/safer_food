@@ -1,25 +1,20 @@
 """
 Docstring for interface.recipes
-Gives recipes depending on the predictiosn made on the user's food"""
+Gives recipe suggestions depending on the predictions made on the user's food.
+Returns one recipe and one AI-generated image suitable for Streamlit.
+"""
 
 from __future__ import annotations
 
-#notes : utiliser LangChain pour transformer nos sources en embeddings, puis
-#faire la génération de texte. Voir challenges et leçons Gen IA, RAG 13 janvier
-
-
-"""
-Copié de explanations.py
-
-"""
-
-
-
 import logging
 import os
-from typing import List, Literal, Optional, Sequence
+from io import BytesIO
+from typing import Any, Dict, Literal, Optional
 
 from dotenv import load_dotenv
+from PIL import Image
+from google import genai
+from google.genai.types import GenerateContentConfig, Modality
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -29,22 +24,22 @@ logger = logging.getLogger(__name__)
 
 Provider = Literal["gemini_api", "vertex", "auto"]
 
-RAW_RECIPES_PROMPT_TEMPLATE = """You are a culinary assistant specialized in safe raw and low-temperature food preparation.
+RAW_RECIPE_PROMPT_TEMPLATE = """You are a culinary assistant specialized in safe raw and low-temperature food preparation.
 
 The user provides a single ingredient category:
 {ingredient}
 
 Your task:
 
-Return exactly 5 recipe suggestions that:
-- Use the provided ingredient in its RAW form.
-- Do NOT include any cooking or heating above 40°C.
-- Do NOT include baking, frying, roasting, boiling, steaming, grilling, sous-vide, or searing.
+Return exactly 1 recipe suggestion that:
+- Uses the provided ingredient in its RAW form.
+- Does NOT include any cooking or heating above 40°C.
+- Does NOT include baking, frying, roasting, boiling, steaming, grilling, sous-vide, or searing.
 - May include marinating, curing, acidification (lemon, vinegar), fermentation, blending, slicing, or cold assembly.
-- Are realistic and commonly recognized culinary preparations.
-- Are appropriate for human consumption (do not suggest unsafe or illegal practices).
+- Is realistic and commonly recognized.
+- Is appropriate for human consumption.
 
-For each recipe, provide:
+Provide:
 
 1. Recipe name
 2. Photo of the recipe
@@ -54,86 +49,82 @@ For each recipe, provide:
 
 Formatting rules:
 - Use clear section headers.
-- Keep each recipe concise.
+- Keep the recipe concise.
 - Do not add disclaimers unless necessary.
 - Do not explain safety risks unless explicitly asked.
-- Return only the 5 recipes.
+- Return only the recipe.
 
-If the ingredient is not suitable for raw preparation, return:
+If the ingredient is not suitable for raw preparation, return exactly:
 "This ingredient is not suitable for raw preparation."
 """
 
-MEDIUM_RECIPES_PROMPT_TEMPLATE = """You are a culinary assistant specialized in controlled moderate-temperature cooking.
+MEDIUM_RECIPE_PROMPT_TEMPLATE = """You are a culinary assistant specialized in controlled moderate-temperature cooking.
 
 The user provides a single ingredient category:
 {ingredient}
 
 Your task:
 
-Return exactly 5 recipe suggestions that:
-
-- Use the provided ingredient as the primary component.
-- Include at least one cooking step performed at a temperature ≥ 70°C and < 110°C.
-- Do NOT include any cooking method exceeding 110°C.
-- Do NOT include frying, grilling, broiling, searing, roasting at high heat, or baking above 110°C.
+Return exactly 1 recipe suggestion that:
+- Uses the provided ingredient as the primary component.
+- Includes at least one cooking step performed at a temperature >= 70°C and < 110°C.
+- Does NOT include any cooking method exceeding 110°C.
+- Does NOT include frying, grilling, broiling, searing, roasting at high heat, or baking above 110°C.
 - Acceptable techniques include simmering (70–100°C), poaching (70–95°C), steaming (<100°C), sous-vide (70–95°C), controlled low-temperature braising (<110°C), or water-bath cooking.
-- Are realistic, commonly recognized culinary preparations.
-- Are appropriate and safe for human consumption.
+- Is realistic and commonly recognized.
+- Is appropriate and safe for human consumption.
 
-For each recipe, provide:
+Provide:
 
 1. Recipe name
-2. Photo of the recipe
-3. Short description (2–3 sentences)
-4. Key ingredients (bullet list)
-5. Cooking method with explicit temperature range (must clearly state a temperature between 70°C and 110°C)
-6. Basic preparation steps (4–6 concise steps)
+2. Short description (2–3 sentences)
+3. Key ingredients (bullet list)
+4. Cooking method with explicit temperature range
+5. Basic preparation steps (4–6 concise steps)
 
 Formatting rules:
 - Use clear section headers.
-- Explicitly state the cooking temperature range in each recipe.
-- Keep each recipe concise.
+- Explicitly state the cooking temperature range.
+- Keep the recipe concise.
 - Do not add safety disclaimers unless explicitly requested.
-- Return only the 5 recipes.
+- Return only the recipe.
 
-If the ingredient is incompatible with cooking within the specified temperature range (70–110°C), return:
+If the ingredient is incompatible with cooking within the specified temperature range, return exactly:
 "This ingredient is not suitable for cooking within the specified temperature range."
 """
 
-HIGH_RECIPES_PROMPT_TEMPLATE = """You are a culinary assistant specialized in high-temperature cooking techniques.
+HIGH_RECIPE_PROMPT_TEMPLATE = """You are a culinary assistant specialized in high-temperature cooking techniques.
 
 The user provides a single ingredient category:
 {ingredient}
 
 Your task:
 
-Return exactly 5 recipe suggestions that:
+Return exactly 1 recipe suggestion that:
+- Uses the provided ingredient as the primary component.
+- Includes at least one cooking step performed at a temperature strictly above 115°C.
+- Explicitly mentions the cooking temperature.
+- Uses realistic high-heat culinary techniques such as roasting, baking, frying, grilling, broiling, sautéing, searing, or pressure cooking (>115°C).
+- Does NOT include exclusively low-temperature methods.
+- Is commonly recognized.
+- Is appropriate and safe for human consumption.
 
-- Use the provided ingredient as the primary component.
-- Include at least one cooking step performed at a temperature strictly above 115°C.
-- Explicitly mention the cooking temperature (e.g., 180°C oven, 200°C roasting, 170°C frying oil, etc.).
-- Use realistic high-heat culinary techniques such as roasting, baking, frying, grilling, broiling, sautéing, searing, or pressure cooking (>115°C).
-- Do NOT include exclusively low-temperature methods (no sous-vide, poaching, steaming, simmering below 110°C).
-- Are commonly recognized culinary preparations.
-- Are appropriate and safe for human consumption.
-
-For each recipe, provide:
+Provide:
 
 1. Recipe name
-2. Photo of the recipe
-3. Short description (2–3 sentences)
-4. Key ingredients (bullet list)
-5. Cooking method with explicit temperature indication (must clearly state a temperature >115°C)
-6. Basic preparation steps (4–6 concise steps)
+2. Short description (2–3 sentences)
+3. Key ingredients (bullet list)
+4. Cooking method with explicit temperature indication
+5. Basic preparation steps (4–6 concise steps)
 
 Formatting rules:
 - Use clear section headers.
-- Explicitly state the cooking temperature in each recipe.
-- Keep each recipe concise.
+- Explicitly state the cooking temperature.
+- Keep the recipe concise.
 - Do not add safety disclaimers unless explicitly requested.
-- Return only the 5 recipes.
+- Return only the recipe.
 
-If the ingredient is incompatible with cooking above 115°C, return:
+If the ingredient is incompatible with cooking above 115°C, return exactly:
 "This ingredient is not suitable for cooking above 115°C."
 """
 
@@ -150,7 +141,6 @@ def _select_provider(provider: Provider) -> Literal["gemini_api", "vertex"]:
     if provider in ("gemini_api", "vertex"):
         return provider
 
-    # auto mode
     if _get_env("GEMINI_API_KEY"):
         logger.info("Auto provider: gemini_api")
         return "gemini_api"
@@ -164,7 +154,7 @@ def _select_provider(provider: Provider) -> Literal["gemini_api", "vertex"]:
     )
 
 
-def _build_llm(
+def _build_text_llm(
     *,
     provider: Literal["gemini_api", "vertex"],
     model: str,
@@ -174,7 +164,6 @@ def _build_llm(
     gcp_project: Optional[str] = None,
     gcp_region: Optional[str] = None,
 ) -> ChatGoogleGenerativeAI:
-
     if provider == "gemini_api":
         api_key = (gemini_api_key or _get_env("GEMINI_API_KEY"))
         if not api_key:
@@ -203,14 +192,118 @@ def _build_llm(
     )
 
 
+def _build_image_client(
+    *,
+    provider: Literal["gemini_api", "vertex"],
+    image_location: Optional[str] = None,
+) -> genai.Client:
+    if provider == "gemini_api":
+        api_key = _get_env("GEMINI_API_KEY")
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY not set.")
+        return genai.Client(api_key=api_key)
+
+    project = _get_env("GOOGLE_CLOUD_PROJECT")
+    if not project:
+        raise RuntimeError("GOOGLE_CLOUD_PROJECT not set.")
+
+    # For image generation on Vertex AI, "global" is often the safest default.
+    location = image_location or _get_env("GOOGLE_CLOUD_REGION") or "global"
+
+    return genai.Client(
+        vertexai=True,
+        project=project,
+        location=location,
+    )
+
+
+def _get_prompt(cooking: str) -> ChatPromptTemplate:
+    if cooking == "raw":
+        return ChatPromptTemplate.from_template(RAW_RECIPE_PROMPT_TEMPLATE)
+    if cooking == "medium":
+        return ChatPromptTemplate.from_template(MEDIUM_RECIPE_PROMPT_TEMPLATE)
+    if cooking == "high":
+        return ChatPromptTemplate.from_template(HIGH_RECIPE_PROMPT_TEMPLATE)
+
+    return ChatPromptTemplate.from_template(
+        "Explain in simple terms that the selected food type or cooking requirements does not belong to a recognized category."
+    )
+
+
+def _build_image_prompt(recipe_text: str) -> str:
+    return f"""Generate one high-quality appetizing food photograph of the dish described below.
+
+Requirements:
+- Photorealistic food photography
+- Single plated serving
+- Clean background
+- Natural lighting
+- No text, labels, watermark, or collage
+- Show the finished dish only
+- Make the appearance consistent with the recipe
+
+Recipe:
+{recipe_text}
+"""
+
+
+def _generate_recipe_image(
+    recipe_text: str,
+    *,
+    provider: Literal["gemini_api", "vertex"],
+    image_model: str = "gemini-2.5-flash-image",
+    image_location: Optional[str] = None,
+) -> Optional[Image.Image]:
+    client = _build_image_client(provider=provider, image_location=image_location)
+
+    response = client.models.generate_content(
+        model=image_model,
+        contents=_build_image_prompt(recipe_text),
+        config=GenerateContentConfig(
+            response_modalities=[Modality.TEXT, Modality.IMAGE],
+        ),
+    )
+
+    for candidate in response.candidates or []:
+        content = getattr(candidate, "content", None)
+        if not content:
+            continue
+
+        for part in content.parts or []:
+            inline_data = getattr(part, "inline_data", None)
+            if inline_data and getattr(inline_data, "data", None):
+                image = Image.open(BytesIO(inline_data.data))
+                image.load()  # fully load into memory
+                return image
+
+    logger.warning("No image returned by the image generation model.")
+    return None
+
+
 def recipe_suggestion(
-    ingredient: Optional[Sequence[str]],
+    ingredient: str,
     cooking: str,
     *,
     provider: Provider = "auto",
     model: str = "gemini-2.5-flash",
     temperature: float = 0.2,
     max_output_tokens: int = 800,
+    image_model: str = "gemini-2.5-flash-image",
+    image_location: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Generate one recipe suggestion and one AI-generated image.
+
+    Returns:
+        dict with:
+        - "recipe_text": str
+        - "image": PIL.Image.Image | None
+
+    Notes:
+        - The image is kept in memory only.
+        - The returned PIL image can be used directly with Streamlit:
+            st.image(result["image"])
+    """
     gemini_api_key: Optional[str] = None,
     gcp_project: Optional[str] = None,
     gcp_region: Optional[str] = None,
@@ -218,7 +311,7 @@ def recipe_suggestion(
 
     selected_provider = _select_provider(provider)
 
-    llm = _build_llm(
+    llm = _build_text_llm(
         provider=selected_provider,
         model=model,
         temperature=temperature,
@@ -228,22 +321,33 @@ def recipe_suggestion(
         gcp_region=gcp_region,
     )
 
-    if cooking == 'raw':
-        prompt = ChatPromptTemplate.from_template(RAW_RECIPES_PROMPT_TEMPLATE)
-    elif cooking == 'medium' :
-        prompt = ChatPromptTemplate.from_template(MEDIUM_RECIPES_PROMPT_TEMPLATE)
-    elif cooking == 'high':
-        prompt = ChatPromptTemplate.from_template(HIGH_RECIPES_PROMPT_TEMPLATE)
-    else:
-        prompt = ChatPromptTemplate.from_template('Explain in simple terms that the selected food type or cooking requirements does not belong to a recognized category ')
-
-
+    prompt = _get_prompt(cooking)
     chain = prompt | llm | StrOutputParser()
 
     answer: str = chain.invoke({"ingredient": ingredient})
-    return answer.strip()
+    recipe_text = answer.strip()
+
+    image = _generate_recipe_image(
+        recipe_text,
+        provider=selected_provider,
+        image_model=image_model,
+        image_location=image_location,
+    )
+
+    return {
+        "recipe_text": recipe_text,
+        "image": image,
+    }
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    print(recipe_suggestion(ingredient="beef", cooking='raw', provider="auto"))
+
+    result = recipe_suggestion(
+        ingredient="beef",
+        cooking="raw",
+        provider="auto",
+    )
+
+    print(result["recipe_text"])
+    print(type(result["image"]))
