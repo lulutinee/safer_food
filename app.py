@@ -4,17 +4,27 @@ SaferFood front-end
 """
 
 import streamlit as st
+from transformers import pipeline
 import matplotlib.pyplot as plt
+import plotly.figure_factory as ff
+from PIL import Image
+
 from interface.inference import infer
 from interface import explanations
 from interface import recipes
 
+
 st.set_page_config(page_title="SaferFood", layout="centered")
 
-st.title("SaferFood", text_alignment='center')
+st.title("Is my food safe to eat?", text_alignment='center')
+st.markdown('Customer edition', text_alignment='center')
 
 # Food categories to display/select from
-FOOD_CATEGORIES = ['beef', 'produce', 'seafood', 'poultry', 'pork']
+FOOD_CATEGORIES = ['beef', 'seafood', 'poultry', 'pork']
+FOOD_DICT = {'beef': ':steak:',
+             'pork': ':pig:',
+             'poultry': ':poultry:',
+             'seafood': ':lobster:'}
 
 # Storage temperatures to select from
 # STORAGE_TEMP_CATEGORIES = {
@@ -56,25 +66,62 @@ logCs = None
 fig = None
 ax = None
 
+# @st.cache_resource
+# def load_model():
+#     return pipeline("image-classification", model="BinhQuocNguyen/food-recognition-model")
+
+# classifier = load_model()
 tab_prediction, tab_explanations, tab_recipes = st.tabs(
     ["Prediction", "Explanations", "Recipes"]
 )
 
-
 with tab_prediction:
 
     # Create vertical layout (left / right)
-    col_left, col_right = st.columns([1, 2])  # ratio adjustable
+    col_left, col_right = st.columns([1,2])  # ratio adjustable
 
     # =========================
     # LEFT COLUMN (INPUTS)
     # =========================
     with col_left:
+        # st.select_slider('Make a choice', ['Chose my food', 'Take a picture'])
+        def main():
+            st.title('Identify food')
 
-        matrixID = st.selectbox(
-            "What do you plan on eating today ?",
-            FOOD_CATEGORIES
-        )
+            photo = st.file_uploader("Take a picture of your food")
+
+            if st.button('Identify food'):
+                    result = classifier(photo)
+                    st.write(result)
+        st.markdown('OR', text_alignment ='center')
+        #st.camera_input('Take a picture')
+
+        #matrixID = st.selectbox(
+        #    "What do you plan on eating today ?",
+        #    FOOD_CATEGORIES
+        #)
+
+        # if 'food' not in  st.session_state:
+        #     st.session_state['food'] = 'Make a choice'
+
+        def change_food(food):
+            st.session_state['food'] = food
+        matrixID = st.pills('Choose', options=list(FOOD_DICT.keys()), format_func=lambda x: FOOD_DICT[x])
+
+
+        # matrixID = st.session_state['food']
+        # st.text(matrixID)
+
+        # col1, col2, col3, col4  = st.columns(4)
+
+        # with col1:
+        #     st.button(':cow2:', on_click=change_food, args=['beef'])
+        # with col2:
+        #     st.button(':pig:', on_click=change_food, args=['pork'])
+        # with col3:
+        #     st.button(':rooster:', on_click=change_food, args=['poultry'])
+        # with col4:
+        #     st.button(':lobster:', on_click=change_food, args=['seafood'])
 
         temperature_value = st.slider(
             "What was your food's storage temperature ?",
@@ -98,8 +145,9 @@ with tab_prediction:
 
         time_in_hours = STORAGE_TIMES[time_label]
 
-
-        go_for_prediction = st.button("CHECK MY FOOD !", use_container_width=True)
+        if matrixID in FOOD_DICT:
+            st.markdown(f'My {matrixID} has been left {time_label} at {temperature_value}°C')
+        go_for_prediction = st.button("Should I eat it?", use_container_width=True)
 
     # =========================
     # RIGHT COLUMN (RESULTS)
@@ -128,10 +176,11 @@ with tab_prediction:
                 st.markdown("\n".join(f"- {bacteria}" for bacteria in bacterias))
 
             if cooking_reco is not None:
-                st.markdown(f'Given our predictions, the recommended cooking temperature for your {matrixID} is: {cooking_reco}')
+                st.markdown(f'Given our predictions, your {matrixID} should be eaten at least {cooking_reco}.')
+                st.markdown(f'Please consider reaching an internal temperature of 71°C for ground meats or 74°C for poultry!')
 
             if fig is not None:
-                st.pyplot(fig)
+                st.plotly_chart(fig)
             else:
                 st.warning("No figure returned by infer().")
 
@@ -145,9 +194,10 @@ with tab_explanations:
 - Model caveats and proper food safety guidance
 """
     )
-    if bacterias is not None:
-        explanations = explanations.risk_explanation(bacterias, max_output_tokens=2000)
-        st.markdown(explanations)
+    with st.spinner("Let me explain to you..."):
+        if bacterias is not None:
+            explanations = explanations.risk_explanation(bacterias, max_output_tokens=2000)
+            st.markdown(explanations)
 
 with tab_recipes:
     st.header("Recipes")

@@ -42,9 +42,10 @@ Return exactly 1 recipe suggestion that:
 Provide:
 
 1. Recipe name
-2. Short description (2–3 sentences)
-3. Key ingredients (bullet list)
-4. Basic preparation steps (concise, 4–6 steps)
+2. Photo of the recipe
+3. Short description (2–3 sentences)
+4. Key ingredients (bullet list)
+5. Basic preparation steps (concise, 4–6 steps)
 
 Formatting rules:
 - Use clear section headers.
@@ -159,9 +160,12 @@ def _build_text_llm(
     model: str,
     temperature: float,
     max_output_tokens: int,
+    gemini_api_key: Optional[str] = None,
+    gcp_project: Optional[str] = None,
+    gcp_region: Optional[str] = None,
 ) -> ChatGoogleGenerativeAI:
     if provider == "gemini_api":
-        api_key = _get_env("GEMINI_API_KEY")
+        api_key = (gemini_api_key or _get_env("GEMINI_API_KEY"))
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY not set.")
 
@@ -172,11 +176,12 @@ def _build_text_llm(
             google_api_key=api_key,
         )
 
-    project = _get_env("GOOGLE_CLOUD_PROJECT")
+    # Vertex AI mode
+    project = (gcp_project or _get_env("GOOGLE_CLOUD_PROJECT"))
     if not project:
         raise RuntimeError("GOOGLE_CLOUD_PROJECT not set.")
 
-    location = _get_env("GOOGLE_CLOUD_REGION") or "us-central1"
+    location = (gcp_region or _get_env("GOOGLE_CLOUD_REGION") or "us-central1")
 
     return ChatGoogleGenerativeAI(
         model=model,
@@ -299,6 +304,11 @@ def recipe_suggestion(
         - The returned PIL image can be used directly with Streamlit:
             st.image(result["image"])
     """
+    gemini_api_key: Optional[str] = None,
+    gcp_project: Optional[str] = None,
+    gcp_region: Optional[str] = None,
+) -> str:
+
     selected_provider = _select_provider(provider)
 
     llm = _build_text_llm(
@@ -306,6 +316,9 @@ def recipe_suggestion(
         model=model,
         temperature=temperature,
         max_output_tokens=max_output_tokens,
+        gemini_api_key=gemini_api_key,
+        gcp_project=gcp_project,
+        gcp_region=gcp_region,
     )
 
     prompt = _get_prompt(cooking)

@@ -3,8 +3,16 @@ pandas
 seaborn
 matplotlib
 scikit-learn
-streamlit
-streamlit[charts]
+scipy
+
+#streamlit app
+transformers
+streamlit==1.54.0
+Pillow
+tensorflow_hub
+torch
+torchvision
+plotly
 
 #Explanation LLM
 langchain
