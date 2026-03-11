@@ -13,23 +13,24 @@ from keras.applications.efficientnet import EfficientNetB0, preprocess_input
 from PIL import Image
 import plotly.graph_objects as go
 
-#GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
-#GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
-#GOOGLE_GENAI_USE_VERTEXAI = st.secrets['GOOGLE_GENAI_USE_VERTEXAI']
+GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
+GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
+GOOGLE_GENAI_USE_VERTEXAI = st.secrets['GOOGLE_GENAI_USE_VERTEXAI']
 from google.oauth2 import service_account
-# service_account = json.loads(st.secrets["GOOGLE_PRIVATE_KEY_JSON"])
+service_account = json.loads(st.secrets["GOOGLE_PRIVATE_KEY_JSON"])
 
-# tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-# tmp.write(json.dumps(service_account).encode())
-# tmp.close()
+tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+tmp.write(json.dumps(service_account).encode())
+tmp.close()
 
-# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
-# os.environ["GOOGLE_CLOUD_PROJECT"] = service_account["project_id"]
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+os.environ["GOOGLE_CLOUD_PROJECT"] = service_account["project_id"]
 
 from interface.inference import infer
 from interface import explanations, recipes, bacteria_information
 import thermometer_component
 from thermometer_component import thermometer_slider
+import re
 
 # -----------------------------
 # Page Config
@@ -297,7 +298,7 @@ FOOD101_LABELS = [
 "deviled_eggs","donuts","dumplings","edamame","eggs_benedict","escargots",
 "falafel","filet_mignon","fish_and_chips","foie_gras","french_fries",
 "french_onion_soup","french_toast","fried_calamari","fried_rice",
-"frozen_yogurt","garlic_bread","gnocchi","greek_salad","grilled_cheese_sandwich",
+"frozen_yogurt","garlic_bread","gnocchi","greek_salad","Quick cooking_cheese_sandwich",
 "grilled_salmon","guacamole","gyoza","hamburger","hot_and_sour_soup",
 "hot_dog","huevos_rancheros","hummus","ice_cream","lasagna","lobster_bisque",
 "lobster_roll_sandwich","macaroni_and_cheese","macarons","miso_soup",
@@ -374,7 +375,7 @@ def make_gauge(title, N, organism):
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=value,
-        number={"suffix": " log CFU/g"},
+        number={"suffix": " log CFU"},
         title={
             "text": f"{title}<br><span style='font-size:22px'>{status}</span>"
         },
@@ -400,11 +401,79 @@ def make_gauge(title, N, organism):
 
     return fig
 
+def make_log_cfu_gauge(title, N, organism):
+    """
+    Gauge uses log scale internally, but displays CFU/g labels.
+
+    Parameters
+    ----------
+    N : float
+        Predicted concentration in log CFU/g
+    organism : str
+        MICROORGANISM key
+    """
+
+    thresholds = MICROORGANISM[organism]
+
+    raw = thresholds["raw"]
+    medium = thresholds["medium"]
+    high = thresholds["high"]
+
+    status, _ = risk_from_count(N, organism)
+
+    # clamp only for display
+    gauge_value = max(0, min(N, high))
+
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=gauge_value,
+        number={
+            "suffix": " log CFU/g",
+            "font": {"size": 24}
+        },
+        title={
+            "text": (
+                f"{title}<br>"
+                f"<span style='font-size:12px'>"
+                f"{thresholds['usual_name']} • {status}<br>"
+                f"Pred: {10**N:.2e} CFU/g"
+                f"</span>"
+            )
+        },
+        gauge={
+            "axis": {
+                "range": [0, high],
+                "tickmode": "array",
+                "tickvals": list(range(0, int(high) + 1)),
+                "ticktext": [f"1e{i}" for i in range(0, int(high) + 1)]
+            },
+            "steps": [
+                {"range": [0, raw], "color": "#E8F8F5"},
+                {"range": [raw, medium], "color": "#FCF3CF"},
+                {"range": [medium, high], "color": "#F5B7B1"},
+            ],
+            "threshold": {
+                "line": {"color": "#E14F3D", "width": 4},
+                "thickness": 0.8,
+                "value": gauge_value
+            },
+            "bar": {"color": "#2C2A29"}
+        }
+    ))
+
+    fig.update_layout(
+        height=280,
+        margin=dict(l=20, r=20, t=60, b=20),
+        paper_bgcolor="rgba(0,0,0,0)",
+        font={"color": "white"}
+    )
+
+    return fig
 # Map AI label to microbial category
 def map_food_category(label):
     label = label.lower()
-    poultry = ["chicken","turkey","wings","poultry"]
-    beef = ["beef","burger","steak","meatball"]
+    poultry = ["chicken","turkey","wings","poultry","peking_duck"]
+    beef = ["beef","burger","steak","meatball","prime_rib"]
     seafood = ["fish","salmon","tuna","shrimp","sushi", "ceviche", "grilled_salmon", "seafood"]
     #dairy = ["cheese","ice_cream","yogurt","cheesecake"]
     #vegetables = ["salad","vegetable","broccoli","ratatouille"]
@@ -455,7 +524,6 @@ def thermometer_slider(
 
     # Use the last value as default (so it persists on reruns)
     value = st.session_state[key]
-    value = st.slider('Storage Temperature', min_value=min_value, max_value=max_value)
     html = f"""
     <style>
       .thermo-wrap {{
@@ -711,12 +779,14 @@ def days_hours_input(
     max_days=21,
     key="storage_time"
 ):
+    days_key = f"{key}_days"
+    hours_key = f"{key}_hours"
 
-    if f"{key}_days" not in st.session_state:
-        st.session_state[f"{key}_days"] = default_days
+    if days_key not in st.session_state:
+        st.session_state[days_key] = default_days
 
-    if f"{key}_hours" not in st.session_state:
-        st.session_state[f"{key}_hours"] = default_hours
+    if hours_key not in st.session_state:
+        st.session_state[hours_key] = default_hours
 
     st.markdown(f"### ⏱️ {label}")
 
@@ -726,7 +796,7 @@ def days_hours_input(
         days = st.number_input(
             "Days",
             min_value=0,
-            max_value=30,
+            max_value=max_days,
             value=1,
             step=1,
             key="days_input"
@@ -808,6 +878,100 @@ def make_shelflife_gauge(remaining_hours, max_display_hours=72):
     return fig
 
 # -----------------------------
+# Format recipe
+# -----------------------------
+def format_recipe_text(recipe_text):
+    """
+    Accepts recipe_text as either:
+    - a string
+    - a list of strings
+
+    Returns a nicely formatted markdown recipe.
+    """
+
+    # 1) Normalize to a list of clean lines
+    if isinstance(recipe_text, list):
+        lines = [str(x).strip() for x in recipe_text if str(x).strip()]
+    elif isinstance(recipe_text, str):
+        lines = [x.strip() for x in recipe_text.split("\n") if x.strip()]
+    else:
+        return "## 🍽 Recipe\n\nRecipe format not recognized."
+
+    title = ""
+    description = ""
+    body = []
+
+    i = 0
+    while i < len(lines):
+        raw_line = lines[i].strip()
+        line = raw_line.lower()
+
+        # Remove markdown ### for matching
+        normalized = re.sub(r"^#+\s*", "", line).strip()
+
+        # ---------- TITLE ----------
+        if normalized.startswith("recipe name"):
+            # Case 1: "Recipe Name: Chicken"
+            if ":" in raw_line:
+                title = raw_line.split(":", 1)[1].strip()
+            # Case 2: next line contains title
+            elif i + 1 < len(lines):
+                title = lines[i + 1].strip()
+                i += 1
+            i += 1
+            continue
+
+        # ---------- DESCRIPTION ----------
+        if normalized.startswith("short description"):
+            # Case 1: "Short Description: ...."
+            if ":" in raw_line:
+                description = raw_line.split(":", 1)[1].strip()
+            # Case 2: next line contains description
+            elif i + 1 < len(lines):
+                description = lines[i + 1].strip()
+                i += 1
+            i += 1
+            continue
+
+        # ---------- BODY ----------
+        body.append(raw_line)
+        i += 1
+
+    # Fallbacks if title missing
+    if not title:
+        # Try using first non-header line as title
+        for line in lines:
+            test = re.sub(r"^#+\s*", "", line).strip().lower()
+            if not any(
+                test.startswith(x)
+                for x in ["recipe name", "short description", "key ingredients", "cooking method", "basic preparation steps"]
+            ):
+                title = line.strip("*# ").strip()
+                break
+
+    if not title:
+        title = "Recipe"
+
+    # Remove duplicated title/description from body if they slipped through
+    cleaned_body = []
+    for line in body:
+        check = re.sub(r"^#+\s*", "", line).strip()
+        if check == title or check == description:
+            continue
+        cleaned_body.append(line)
+
+    body_text = "\n".join(cleaned_body).strip()
+
+    formatted = f"# 🍽 {title}\n\n"
+
+    if description:
+        formatted += f"*{description}*\n\n"
+
+    formatted += body_text
+
+    return formatted
+
+# -----------------------------
 # Streamlit UI
 # -----------------------------
 
@@ -826,84 +990,99 @@ with st.sidebar:
     st.markdown("### SaferFood™")
     st.caption("AI-assisted food safety estimation")
 
+st.session_state.temperature_value = 4
+st.session_state.default_days = 1
+st.session_state.default_hours = 0
+
 col1, col2, col3, col4  = st.columns([1,1,1,1], vertical_alignment="center")
 
 with col1:
     if "uploaded_file" not in st.session_state:
         st.session_state.uploaded_file = None
 
-    input_method = st.radio("Food identification method:", ["Select Food Category","Upload Image"])
+    input_method = st.radio(
+        "Food identification method:",
+        ["Select Food Category", "Upload Image"]
+    )
 
     if input_method == "Upload Image":
-        if st.session_state.uploaded_file is None:
 
+        if st.session_state.uploaded_file is None:
             st.markdown("""
                 <style>
-                /* Change the background color of the drag-and-drop area */
                 [data-testid='stFileUploaderDropzone'] {
-                    background-color: #161514; /* Red background */
-                    color: #ffffff;             /* White text color */
+                    background-color: #161514;
+                    color: #ffffff;
                 }
                 </style>
-                """, unsafe_allow_html=True)
-            uploaded = st.file_uploader("Upload food image", type=["jpg", "jpeg", "png"])
+            """, unsafe_allow_html=True)
+
+            uploaded = st.file_uploader(
+                "Upload food image",
+                type=["jpg", "jpeg", "png"]
+            )
 
             if uploaded is not None:
                 st.session_state.uploaded_file = uploaded
-                st.rerun()   # immediately refresh UI
+                st.rerun()
 
         else:
             img = Image.open(st.session_state.uploaded_file)
             st.image(img, width=150)
 
+            # Always show this button
+            if st.button("🔄 Upload another image", key="upload_another_image"):
+                st.rerun()
+
+            # Analyze only once per uploaded image
             with st.spinner("Analyzing food with AI..."):
                 processed = preprocess_food_image(img)
                 preds = food_model(processed, training=False).numpy()
 
-                # Safety check
                 if np.isnan(preds).any():
                     st.error("Prediction produced NaN. Check preprocessing or model.")
+                    food = "pork"
                 else:
                     top_index = np.argmax(preds[0])
                     food_img = FOOD101_LABELS[top_index]
                     food = map_food_category(food_img)
                     confidence = preds[0][top_index]
-                    st.success(f"Detected dish: {food}")
+                    st.success(f"Detected dish: {food_img}")
 
-            if st.button("🔄 Upload another image"):
-                st.session_state.uploaded_file = None
-                st.rerun()
 
     else:
         st.markdown("""
         <style>
         .stSelectbox div[data-baseweb="select"] > div:first-child {
-            background-color: #161514; /* Use your desired color */
+            background-color: #161514;
         }
         </style>
         """, unsafe_allow_html=True)
-        food = st.selectbox("Select food type:", list(FOOD_MODELS.keys()),
-                            width=200).lower()
+
+        food = st.selectbox(
+            "Select food type:",
+            list(FOOD_MODELS.keys()),
+            width=200
+        ).lower()
+
 
 with col2:
-    #temperature = st.slider("🌡Storage Temperature (°C)", -5, 40, 4)
-    temperature = thermometer_slider(
-        "Storage Temperature (°C)",
-        min_value=-5,
-        max_value=40,
+    temperature = st.slider(
+        "Storage Temperature",
+        min_value=0,
+        max_value=30,
         value=4,
-        step=1,
-        color="#E14F3D",
-        key="temp"
+        key="temperature_slider"
     )
 
-    st.write("Selected temperature:", temperature, "°C")
+    # st.write("Selected temperature:", temperature, "°C")
 
 with col3:
     time_hours = days_hours_input(
         label="Storage Time",
-        default_days=1,
-        default_hours=0
+        default_days=st.session_state.default_days,
+        default_hours=st.session_state.default_hours,
+        key="storage_time"
     )
 
     st.write("Selected storage time:", time_hours, "hours")
@@ -956,7 +1135,7 @@ st.markdown("---")
 if st.session_state.prediction_done:
     p = st.session_state.prediction
 
-    if p["cooking_reco"] == "raw" or "medium":
+    if p['is_safe'] == True :
         status = "✅ Safe"
 
         if p["cooking_reco"] == "high":
@@ -986,15 +1165,27 @@ if st.session_state.prediction_done:
     with c1:
         st.plotly_chart(make_gauge("E. coli", pathogen_counts["ec"], "ec"))
         if p["fig"] is not None:
-            st.plotly_chart(p["fig"])
+            st.plotly_chart(p["fig"]["ec"])
         else:
             st.warning("No figure returned by infer().")
     with c2:
         st.plotly_chart(make_gauge("Listeria", pathogen_counts["lm"], "lm"))
+        if p["fig"] is not None:
+            st.plotly_chart(p["fig"]["lm"])
+        else:
+            st.warning("No figure returned by infer().")
     with c3:
         st.plotly_chart(make_gauge("Salmonella", pathogen_counts["ss"], "ss"))
+        if p["fig"] is not None:
+            st.plotly_chart(p["fig"]["ss"])
+        else:
+            st.warning("No figure returned by infer().")
     with c4:
         st.plotly_chart(make_gauge("Total Count", pathogen_counts["ta"], "ta"))
+        if p["fig"] is not None:
+            st.plotly_chart(p["fig"]["ta"])
+        else:
+            st.warning("No figure returned by infer().")
 
     # -----------------------------
     # Remaining shelf-life section
@@ -1022,8 +1213,7 @@ if st.session_state.prediction_done:
 
     with g1:
         st.plotly_chart(
-            make_shelflife_gauge(remaining_risk, max_display_hours=72),
-            use_container_width=True
+            make_shelflife_gauge(remaining_risk, max_display_hours=72)
         )
 
     with g2:
@@ -1055,21 +1245,35 @@ if st.session_state.prediction_done:
 
     st.markdown("## Recipe suggestions")
     if p["cooking_reco"] == "raw" and p['food'] == "poultry":
-        cooking_choice = ["Grilled", "Mijoté"]
+        cooking_choice = ["Quick cooking", "High temperature cooking"]
     elif p["cooking_reco"] == "raw":
-        cooking_choice = ["Tartare", "Grilled", "Mijoté"]
+        cooking_choice = ["Tartare", "Quick cooking", "High temperature cooking"]
     elif p["cooking_reco"] == "medium":
-        cooking_choice = ["Grilled", "Mijoté"]
+        cooking_choice = ["Quick cooking", "High temperature cooking"]
     else:
-        cooking_choice = ["Mijoté"]
+        cooking_choice = ["High temperature cooking"]
 
     cooking_dict = {'Tartare': 'raw',
-                   'Grilled': 'medium',
-                   'Mijoté': 'high'}
+                   'Quick cooking': 'medium',
+                   'High temperature cooking': 'high'}
 
-    recipe_cooking = cooking_dict[st.pills('What kind of recipes would you like?', options=cooking_choice)]
-    st.markdown(recipe_cooking)
-    if st.button("Find recipes"):
+    if status == "✅ Safe":
+        recipe_cooking = cooking_dict[st.selectbox('What kind of recipes would you like?', options=cooking_choice, width=300)]
+        if recipe_cooking == None:
+            st.markdown("Please make a choice")
+        if st.button("Find recipes"):
             with st.spinner("Looking for yummy recipes"):
-                recipes = recipes.recipe_suggestion(ingredient=p["food"], cooking=recipe_cooking, provider='auto', max_output_tokens=5000)
-            st.markdown(recipes)
+                recipe = recipes.recipe_suggestion(ingredient=p["food"], cooking=recipe_cooking, provider='auto', max_output_tokens=5000)
+            #st.markdown(recipes)
+            if recipe is not None:
+                recipe_text = recipe["recipe_text"]
+                recipe_image = recipe["image"]
+                formatted_recipe = format_recipe_text(recipe_text)
+
+                col1, col2 = st.columns([1, 2], vertical_alignment="top")
+
+                with col1:
+                    st.image(recipe_image)
+
+                with col2:
+                    st.markdown(formatted_recipe)
