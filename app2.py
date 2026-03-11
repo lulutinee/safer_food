@@ -997,6 +997,9 @@ st.session_state.default_hours = 0
 col1, col2, col3, col4  = st.columns([1,1,1,1], vertical_alignment="center")
 
 with col1:
+    if "uploaded_file" not in st.session_state:
+        st.session_state.uploaded_file = None
+
     input_method = st.radio(
         "Food identification method:",
         ["Select Food Category", "Upload Image"]
@@ -1021,9 +1024,6 @@ with col1:
 
             if uploaded is not None:
                 st.session_state.uploaded_file = uploaded
-                st.session_state.detected_food_img = None
-                st.session_state.detected_food_category = None
-                st.session_state.detected_confidence = None
                 st.rerun()
 
         else:
@@ -1035,34 +1035,20 @@ with col1:
                 st.rerun()
 
             # Analyze only once per uploaded image
-            if st.session_state.detected_food_img is None:
-                with st.spinner("Analyzing food with AI..."):
-                    processed = preprocess_food_image(img)
-                    preds = food_model(processed, training=False).numpy()
+            with st.spinner("Analyzing food with AI..."):
+                processed = preprocess_food_image(img)
+                preds = food_model(processed, training=False).numpy()
 
-                    if np.isnan(preds).any():
-                        st.error("Prediction produced NaN. Check preprocessing or model.")
-                        food = "pork"
-                    else:
-                        top_index = np.argmax(preds[0])
-                        food_img = FOOD101_LABELS[top_index]
-                        food = map_food_category(food_img)
-                        confidence = preds[0][top_index]
+                if np.isnan(preds).any():
+                    st.error("Prediction produced NaN. Check preprocessing or model.")
+                    food = "pork"
+                else:
+                    top_index = np.argmax(preds[0])
+                    food_img = FOOD101_LABELS[top_index]
+                    food = map_food_category(food_img)
+                    confidence = preds[0][top_index]
+                    st.success(f"Detected dish: {food_img}")
 
-                        st.session_state.detected_food_img = food_img
-                        st.session_state.detected_food_category = food
-                        st.session_state.detected_confidence = confidence
-
-                        st.rerun()
-            else:
-                food_img = st.session_state.detected_food_img
-                food = st.session_state.detected_food_category
-                confidence = st.session_state.detected_confidence
-
-            if st.session_state.detected_food_img is not None:
-                st.success(f"Detected dish: {st.session_state.detected_food_img}")
-                if st.session_state.detected_confidence is not None:
-                    st.caption(f"Confidence: {st.session_state.detected_confidence:.2%}")
 
     else:
         st.markdown("""
