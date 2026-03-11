@@ -28,9 +28,7 @@ from google.oauth2 import service_account
 
 from interface.inference import infer
 from interface import explanations, recipes, bacteria_information
-import thermometer_component
-from thermometer_component import thermometer_slider
-import re
+from  streamlit_vertical_slider import vertical_slider
 
 # -----------------------------
 # Page Config
@@ -343,7 +341,7 @@ def risk_from_count(N, organism):
     if N <= raw:
         return "✅Safe", N/high
     if N < medium:
-        return "Safe", N/high
+        return "✅Safe", N/high
     elif N < high:
         return "⚠️Caution", N/high
     else:
@@ -390,7 +388,7 @@ def make_gauge(title, N, organism):
 
     fig.update_layout(
         height=350,
-        margin=dict(l=20, r=20, t=50, b=10)
+        margin=dict(l=70, r=20, t=50, b=10)
     )
 
     return fig
@@ -497,51 +495,67 @@ def preprocess_food_image(img_pil):
 # -----------------------------
 # Thermometer slider
 # -----------------------------
-def thermometer_slider(
+def thermometer_display(
     label: str,
+    temperature: float,
     min_value: int = -5,
     max_value: int = 40,
-    value: int = 4,
-    step: int = 1,
     height: int = 360,
-    key: str = "thermo_temp",
-    color: str = "#E14F3D",
 ):
     """
-    Vertical thermometer slider rendered in HTML.
-    User drags mercury level inside thermometer to change value.
-    Returns an int (or float if you change it) back to Streamlit.
+    Display-only thermometer driven by an external temperature value.
+    No dragging / no interaction.
+    Color reflects bacterial risk:
+      cold = lower risk, hot = higher risk
     """
-    # Streamlit component returns a value; we keep state in session_state
-    if key not in st.session_state:
-        st.session_state[key] = value
 
-    # Use the last value as default (so it persists on reruns)
-    value = st.session_state[key]
+    # Clamp temperature to display range
+    value = max(min_value, min(float(temperature), max_value))
+
+    # Fill %
+    fill_percent = ((value - min_value) / (max_value - min_value)) * 100
+
+    # Risk color by temperature
+    if value <= 4:
+        mercury_color = "#3498DB"   # blue = refrigerated / lower risk
+        risk_label = "Low risk"
+    elif value <= 10:
+        mercury_color = "#2ECC71"   # green = cool / moderate-safe
+        risk_label = "Moderate-low risk"
+    elif value <= 20:
+        mercury_color = "#F39C12"   # orange = growth increasing
+        risk_label = "Moderate risk"
+    else:
+        mercury_color = "#E14F3D"   # red = high growth risk
+        risk_label = "High risk"
+
     html = f"""
     <style>
       .thermo-wrap {{
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
         display: flex;
         flex-direction: column;
         gap: 10px;
-        user-select: none;
       }}
+
       .thermo-label {{
         font-size: 20px;
-        font-weight: 600;
+        font-weight: 700;
         color: #fff;
       }}
+
       .thermo-row {{
-        display:flex;
-        align-items:center;
-        gap: 16px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
       }}
+
       .thermo {{
         position: relative;
-        width: 70px;
+        width: 72px;
         height: 300px;
       }}
+
       .tube {{
         position: absolute;
         left: 50%;
@@ -554,11 +568,12 @@ def thermometer_slider(
         background: linear-gradient(180deg, #f7f7f7 0%, #ededed 100%);
         overflow: hidden;
       }}
+
       .bulb {{
         position: absolute;
         left: 50%;
         transform: translateX(-50%);
-        bottom: 0px;
+        bottom: 0;
         width: 54px;
         height: 54px;
         border-radius: 50%;
@@ -566,14 +581,15 @@ def thermometer_slider(
         background: linear-gradient(180deg, #f7f7f7 0%, #eaeaea 100%);
         overflow: hidden;
       }}
+
       .mercury {{
         position: absolute;
         bottom: 0;
         left: 0;
         width: 100%;
-        height: 0%;
-        background: {color};
+        background: {mercury_color};
       }}
+
       .mercury-gloss {{
         position: absolute;
         left: 18%;
@@ -583,51 +599,54 @@ def thermometer_slider(
         border-radius: 99px;
         background: rgba(255,255,255,0.35);
       }}
+
       .bulb .mercury {{
         border-radius: 50%;
       }}
+
       .value-box {{
-        min-width: 90px;
-        font-size: 20px;
+        min-width: 130px;
+        font-size: 24px;
         font-weight: 800;
         color: #fff;
-      }}
-      .hint {{
-        font-size: 12px;
-        color: #666;
-        margin-top: 2px;
+        line-height: 1.2;
       }}
 
-      /* Invisible input overlay to capture drag inside thermometer */
-      .overlay {{
-        position:absolute;
-        left: 50%;
-        transform: translateX(-50%);
-        top: 10px;
-        width: 26px;
-        height: 240px;
-        border-radius: 18px;
-        cursor: ns-resize;
-        background: rgba(0,0,0,0);
+      .risk-box {{
+        font-size: 13px;
+        font-weight: 600;
+        color: {mercury_color};
+        margin-top: 4px;
       }}
 
-      /* Tick marks (optional) */
       .ticks {{
-        position:absolute;
+        position: absolute;
         left: calc(50% + 18px);
         top: 10px;
         height: 240px;
-        width: 16px;
-        display:flex;
+        width: 30px;
+        display: flex;
         flex-direction: column;
         justify-content: space-between;
       }}
+
+      .tick-row {{
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }}
+
       .tick {{
         height: 2px;
-        background: #555;
+        background: #666;
         border-radius: 2px;
         width: 10px;
-        opacity: 0.7;
+        opacity: 0.8;
+      }}
+
+      .tick-label {{
+        font-size: 11px;
+        color: #aaa;
       }}
     </style>
 
@@ -635,133 +654,36 @@ def thermometer_slider(
       <div class="thermo-label">{label}</div>
 
       <div class="thermo-row">
-        <div class="thermo" id="thermo">
+        <div class="thermo">
           <div class="tube">
-            <div class="mercury" id="tubeMercury"></div>
+            <div class="mercury" style="height:{fill_percent}%;"></div>
             <div class="mercury-gloss"></div>
           </div>
 
           <div class="bulb">
-            <div class="mercury" id="bulbMercury"></div>
+            <div class="mercury" style="height:100%;"></div>
             <div class="mercury-gloss"></div>
           </div>
 
-          <div class="overlay" id="dragArea" aria-label="drag temperature"></div>
-
           <div class="ticks">
-            <div class="tick"></div>
-            <div class="tick"></div>
-            <div class="tick"></div>
-            <div class="tick"></div>
-            <div class="tick"></div>
-            <div class="tick"></div>
+            <div class="tick-row"><div class="tick"></div><div class="tick-label">{max_value}°</div></div>
+            <div class="tick-row"><div class="tick"></div><div class="tick-label">30°</div></div>
+            <div class="tick-row"><div class="tick"></div><div class="tick-label">20°</div></div>
+            <div class="tick-row"><div class="tick"></div><div class="tick-label">10°</div></div>
+            <div class="tick-row"><div class="tick"></div><div class="tick-label">4°</div></div>
+            <div class="tick-row"><div class="tick"></div><div class="tick-label">{min_value}°</div></div>
           </div>
         </div>
 
         <div>
-          <div class="value-box"><span id="valText">{value}</span> °C</div>
-          <div class="hint">Drag inside the thermometer</div>
+          <div class="value-box">{value:.1f} °C</div>
+          <div class="risk-box">{risk_label}</div>
         </div>
       </div>
     </div>
-
-    <script>
-      const minV = {min_value};
-      const maxV = {max_value};
-      const step = {step};
-      let value = {value};
-
-      const tubeMercury = document.getElementById("tubeMercury");
-      const bulbMercury = document.getElementById("bulbMercury");
-      const valText = document.getElementById("valText");
-      const dragArea = document.getElementById("dragArea");
-
-      function clamp(x, a, b) {{
-        return Math.max(a, Math.min(b, x));
-      }}
-
-      function snapToStep(v) {{
-        const snapped = Math.round((v - minV) / step) * step + minV;
-        return clamp(snapped, minV, maxV);
-      }}
-
-      function percentFromValue(v) {{
-        return ((v - minV) / (maxV - minV)) * 100;
-      }}
-
-      function setUI(v) {{
-        const pct = percentFromValue(v);
-        tubeMercury.style.height = pct + "%";
-        bulbMercury.style.height = "100%";
-        valText.textContent = v;
-      }}
-
-      function emitValue(v) {{
-        // Streamlit component protocol
-        const out = {{ value: v }};
-        window.parent.postMessage({{
-          isStreamlitMessage: true,
-          type: "streamlit:setComponentValue",
-          value: out
-        }}, "*");
-      }}
-
-      function updateFromClientY(clientY) {{
-        const rect = dragArea.getBoundingClientRect();
-        const y = clamp(clientY, rect.top, rect.bottom);
-        const rel = (rect.bottom - y) / rect.height; // 0 bottom -> 1 top
-        let v = minV + rel * (maxV - minV);
-        v = snapToStep(v);
-        value = v;
-        setUI(value);
-        emitValue(value);
-      }}
-
-      let dragging = false;
-
-      dragArea.addEventListener("mousedown", (e) => {{
-        dragging = true;
-        updateFromClientY(e.clientY);
-      }});
-
-      window.addEventListener("mousemove", (e) => {{
-        if (!dragging) return;
-        updateFromClientY(e.clientY);
-      }});
-
-      window.addEventListener("mouseup", () => {{
-        dragging = false;
-      }});
-
-      // Touch support
-      dragArea.addEventListener("touchstart", (e) => {{
-        dragging = true;
-        updateFromClientY(e.touches[0].clientY);
-      }}, {{passive:true}});
-
-      window.addEventListener("touchmove", (e) => {{
-        if (!dragging) return;
-        updateFromClientY(e.touches[0].clientY);
-      }}, {{passive:true}});
-
-      window.addEventListener("touchend", () => {{
-        dragging = false;
-      }});
-
-      // init UI
-      setUI(value);
-      emitValue(value);
-    </script>
     """
 
-    # Return value from component
-    result = components.html(html, height=height)
-
-    # result comes as dict {"value": x} or None
-    if isinstance(result, dict) and "value" in result:
-        st.session_state[key] = int(result["value"])
-
-    return st.session_state[key]
+    components.html(html, height=height)
 
 # -----------------------------
 # Digital timer
@@ -845,7 +767,7 @@ def make_shelflife_gauge(remaining_hours, max_display_hours=72):
         mode="gauge+number",
         value=value,
         number={"suffix": " h", "font": {"size": 28}},
-        title={"text": f"{title}<br><span style='font-size:13px'>{display_text}</span>"},
+        #title={"text": f"{title}<br><span style='font-size:13px'>{display_text}</span>"},
         gauge={
             "axis": {"range": [0, max_display_hours]},
             "bar": {"color": "#E14F3D"},
@@ -894,9 +816,10 @@ st.session_state.temperature_value = 4
 st.session_state.default_days = 1
 st.session_state.default_hours = 0
 
-col1, col2, col3, col4  = st.columns([1,1,1,1], vertical_alignment="center")
+col1, col2, col3, col4  = st.columns([2,3,2,3])
 
 with col1:
+    st.markdown("### Food selection")
     if "uploaded_file" not in st.session_state:
         st.session_state.uploaded_file = None
 
@@ -967,14 +890,31 @@ with col1:
 
 
 with col2:
-    temperature = st.slider(
-        "Storage Temperature",
-        min_value=0,
-        max_value=30,
-        value=4,
-        key="temperature_slider"
-    )
+    st.markdown("### Storage temperature")
+    st.markdown("Drag the slider below to adjust the temperature")
+    col_slider, col_thermometer = st.columns([1,2])
+    with col_slider:
+        temperature = vertical_slider(
+            key="temp_slider",
+            height=250,
+            thumb_shape="circle",
+            step=1,
+            default_value=4,
+            min_value=0,
+            max_value=30,
+            track_color="#E1503D6F",
+            slider_color="#E14F3D",
+            # thumb_color=bar_color,
+            value_always_visible=False,
+        )
 
+    with col_thermometer:
+        thermometer_display(
+            label="",
+            temperature=temperature,
+            min_value=-5,
+            max_value=40
+        )
     # st.write("Selected temperature:", temperature, "°C")
 
 with col3:
@@ -1069,25 +1009,25 @@ if st.session_state.prediction_done:
     with c1:
         st.plotly_chart(make_gauge("E. coli", pathogen_counts["ec"], "ec"))
         if p["fig"] is not None:
-            st.plotly_chart(p["fig"]["ec"])
+            st.plotly_chart(p["fig"]["ec"], height=300)
         else:
             st.warning("No figure returned by infer().")
     with c2:
         st.plotly_chart(make_gauge("Listeria", pathogen_counts["lm"], "lm"))
         if p["fig"] is not None:
-            st.plotly_chart(p["fig"]["lm"])
+            st.plotly_chart(p["fig"]["lm"], height=300)
         else:
             st.warning("No figure returned by infer().")
     with c3:
         st.plotly_chart(make_gauge("Salmonella", pathogen_counts["ss"], "ss"))
         if p["fig"] is not None:
-            st.plotly_chart(p["fig"]["ss"])
+            st.plotly_chart(p["fig"]["ss"], height=300)
         else:
             st.warning("No figure returned by infer().")
     with c4:
         st.plotly_chart(make_gauge("Total Count", pathogen_counts["ta"], "ta"))
         if p["fig"] is not None:
-            st.plotly_chart(p["fig"]["ta"])
+            st.plotly_chart(p["fig"]["ta"], height=300)
         else:
             st.warning("No figure returned by infer().")
 
@@ -1118,7 +1058,7 @@ if st.session_state.prediction_done:
 
     with g1:
         st.plotly_chart(
-            make_shelflife_gauge(remaining_risk, max_display_hours=72)
+            make_shelflife_gauge(remaining_risk, max_display_hours=danger_time)
         )
 
     with g2:
@@ -1178,21 +1118,6 @@ if st.session_state.prediction_done:
                 cooking_method = recipe["cooking_method"]
                 basic_preparation_steps = recipe["basic_preparation_steps"]
 
-
-    #    "recipe_title": text_bundle["recipe_title"],
-    #     "short_description": text_bundle["short_description"],
-    #     "key_ingredients": text_bundle["key_ingredients"],
-    #     "cooking_method": text_bundle["cooking_method"],
-    #     "basic_preparation_steps": text_bundle["basic_preparation_steps"],
-    #     "recipe_text": text_bundle["recipe_text"],
-    #     "image": image_bundle["image"],
-    #     "debug": {
-    #         "provider": resolved_provider,
-    #         "text_model": model,
-    #         "image_model": image_model,
-    #         "text_finish_reason": text_bundle.get("__finish_reason") or None,
-    #         "image_finish_reason": image_bundle.get("finish_reason"),
-    #         "text_attempts": text_bundle.get("__attempts", 1),
                 st.markdown(f"## {recipe_title}")
                 st.markdown(short_description)
                 col1, col2 = st.columns([1, 2], vertical_alignment="top")
