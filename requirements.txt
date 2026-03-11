@@ -13,6 +13,7 @@ tensorflow_hub
 torch
 torchvision
 plotly
+re
 
 #Explanation LLM
 langchain
