@@ -13,18 +13,18 @@ from keras.applications.efficientnet import EfficientNetB0, preprocess_input
 from PIL import Image
 import plotly.graph_objects as go
 
-GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
-GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
-GOOGLE_GENAI_USE_VERTEXAI = st.secrets['GOOGLE_GENAI_USE_VERTEXAI']
+# GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
+# GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
+# GOOGLE_GENAI_USE_VERTEXAI = st.secrets['GOOGLE_GENAI_USE_VERTEXAI']
 from google.oauth2 import service_account
-service_account = json.loads(st.secrets["GOOGLE_PRIVATE_KEY_JSON"])
+# service_account = json.loads(st.secrets["GOOGLE_PRIVATE_KEY_JSON"])
 
-tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-tmp.write(json.dumps(service_account).encode())
-tmp.close()
+# tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+# tmp.write(json.dumps(service_account).encode())
+# tmp.close()
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
-os.environ["GOOGLE_CLOUD_PROJECT"] = service_account["project_id"]
+# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+# os.environ["GOOGLE_CLOUD_PROJECT"] = service_account["project_id"]
 
 from interface.inference import infer
 from interface import explanations, recipes, bacteria_information
@@ -395,7 +395,7 @@ def make_gauge(title, N, organism):
     ))
 
     fig.update_layout(
-        height=310,
+        height=350,
         margin=dict(l=20, r=20, t=50, b=10)
     )
 
@@ -1236,44 +1236,73 @@ if st.session_state.prediction_done:
     # -----------------------------
     # Bacterial growth chart
     # -----------------------------
-    if st.button("What does it mean?"):
-        with st.spinner("Generating detailed explanation..."):
-            explanations = explanations.risk_explanation(p["bacterias"], max_output_tokens=2000)
+    if status != "✅ Safe":
+        if st.button("What does it mean?"):
+            with st.spinner("Generating detailed explanation..."):
+                explanations = explanations.risk_explanation(p["bacterias"], max_output_tokens=2000)
 
-        st.markdown("### 🧠 AI Detailed Explanation")
-        st.write(explanations)
-
-    st.markdown("## Recipe suggestions")
-    if p["cooking_reco"] == "raw" and p['food'] == "poultry":
-        cooking_choice = ["Quick cooking", "High temperature cooking"]
-    elif p["cooking_reco"] == "raw":
-        cooking_choice = ["Tartare", "Quick cooking", "High temperature cooking"]
-    elif p["cooking_reco"] == "medium":
-        cooking_choice = ["Quick cooking", "High temperature cooking"]
+            st.markdown("### 🧠 AI Detailed Explanation")
+            st.write(explanations)
     else:
-        cooking_choice = ["High temperature cooking"]
+        st.markdown("## Recipe suggestions")
+        if p["cooking_reco"] == "raw" and p['food'] == "poultry":
+            cooking_choice = ["Quick cooking", "High temperature cooking"]
+        elif p["cooking_reco"] == "raw":
+            cooking_choice = ["Tartare", "Quick cooking", "High temperature cooking"]
+        elif p["cooking_reco"] == "medium":
+            cooking_choice = ["Quick cooking", "High temperature cooking"]
+        else:
+            cooking_choice = ["High temperature cooking"]
 
-    cooking_dict = {'Tartare': 'raw',
-                   'Quick cooking': 'medium',
-                   'High temperature cooking': 'high'}
+        cooking_dict = {'Tartare': 'raw',
+                    'Quick cooking': 'medium',
+                    'High temperature cooking': 'high'}
 
-    if status == "✅ Safe":
         recipe_cooking = cooking_dict[st.selectbox('What kind of recipes would you like?', options=cooking_choice, width=300)]
         if recipe_cooking == None:
             st.markdown("Please make a choice")
         if st.button("Find recipes"):
             with st.spinner("Looking for yummy recipes"):
                 recipe = recipes.recipe_suggestion(ingredient=p["food"], cooking=recipe_cooking, provider='auto', max_output_tokens=5000)
-            #st.markdown(recipes)
+
             if recipe is not None:
                 recipe_text = recipe["recipe_text"]
                 recipe_image = recipe["image"]
                 formatted_recipe = format_recipe_text(recipe_text)
+                recipe_title = recipe["recipe_title"]
+                short_description = recipe["short_description"]
+                key_ingredients = recipe["key_ingredients"]
+                cooking_method = recipe["cooking_method"]
+                basic_preparation_steps = recipe["basic_preparation_steps"]
 
+
+    #    "recipe_title": text_bundle["recipe_title"],
+    #     "short_description": text_bundle["short_description"],
+    #     "key_ingredients": text_bundle["key_ingredients"],
+    #     "cooking_method": text_bundle["cooking_method"],
+    #     "basic_preparation_steps": text_bundle["basic_preparation_steps"],
+    #     "recipe_text": text_bundle["recipe_text"],
+    #     "image": image_bundle["image"],
+    #     "debug": {
+    #         "provider": resolved_provider,
+    #         "text_model": model,
+    #         "image_model": image_model,
+    #         "text_finish_reason": text_bundle.get("__finish_reason") or None,
+    #         "image_finish_reason": image_bundle.get("finish_reason"),
+    #         "text_attempts": text_bundle.get("__attempts", 1),
+                st.markdown(f"## {recipe_title}")
+                st.markdown(short_description)
                 col1, col2 = st.columns([1, 2], vertical_alignment="top")
 
                 with col1:
                     st.image(recipe_image)
 
                 with col2:
-                    st.markdown(formatted_recipe)
+                    st.markdown("### Cooking method")
+                    st.markdown(cooking_method)
+
+                    st.markdown("### Ingredients")
+                    st.markdown(key_ingredients)
+
+                    st.markdown("### Preparation")
+                    st.markdown(basic_preparation_steps)
