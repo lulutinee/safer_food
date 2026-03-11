@@ -1,61 +1,83 @@
 """
-Docstring for interface.recipes
-Gives recipe suggestions depending on the predictions made on the user's food.
-Returns one recipe and one AI-generated image suitable for Streamlit.
+interface.recipes
+
+Generate one recipe title, structured recipe fields, and one AI-generated image
+from an ingredient category and a cooking mode.
+
+Returned dictionary:
+{
+    "recipe_title": str,
+    "short_description": str,
+    "key_ingredients": list[str],
+    "cooking_method": str,
+    "basic_preparation_steps": list[str],
+    "recipe_text": str,
+    "image": PIL.Image.Image | None,
+    "debug": {
+        "provider": str,
+        "text_model": str,
+        "image_model": str,
+        "text_finish_reason": str | None,
+        "image_finish_reason": str | None,
+        "text_attempts": int,
+    }
+}
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from io import BytesIO
 from typing import Any, Dict, Literal, Optional
 
 from dotenv import load_dotenv
-from PIL import Image
 from google import genai
-from google.genai.types import GenerateContentConfig, Modality
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
+from google.genai import types
+from PIL import Image
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
 Provider = Literal["gemini_api", "vertex", "auto"]
+ResolvedProvider = Literal["gemini_api", "vertex"]
+
 
 RAW_RECIPE_PROMPT_TEMPLATE = """You are a culinary assistant specialized in safe raw and low-temperature food preparation.
 
 The user provides a single ingredient category:
 {ingredient}
 
-Your task:
+Return exactly one recipe as JSON with this schema:
+{{
+  "recipe_title": "short title",
+  "short_description": "1-2 sentence description",
+  "key_ingredients": ["ingredient 1", "ingredient 2"],
+  "cooking_method": "brief method summary",
+  "basic_preparation_steps": ["step 1", "step 2", "step 3"]
+}}
 
-Return exactly 1 recipe suggestion that:
-- Uses the provided ingredient in its RAW form.
-- Does NOT include any cooking or heating above 40°C.
-- Does NOT include baking, frying, roasting, boiling, steaming, grilling, sous-vide, or searing.
-- May include marinating, curing, acidification (lemon, vinegar), fermentation, blending, slicing, or cold assembly.
-- Is realistic and commonly recognized.
-- Is appropriate for human consumption.
+Rules:
+- Use the provided ingredient in its RAW form.
+- Do NOT include any cooking or heating above 40°C.
+- Do NOT include baking, frying, roasting, boiling, steaming, grilling, sous-vide, or searing.
+- Allowed techniques: marinating, curing, acidification (lemon, vinegar), fermentation, blending, slicing, cold assembly.
+- The recipe must be realistic and commonly recognized.
+- The recipe must be appropriate for human consumption.
+- key_ingredients must contain 4 to 6 items.
+- basic_preparation_steps must contain 3 to 4 concise steps.
+- cooking_method should be a short paragraph or sentence summarizing the preparation approach.
 
-Provide:
-
-1. Recipe name
-2. Photo of the recipe
-3. Short description (2–3 sentences)
-4. Key ingredients (bullet list)
-5. Basic preparation steps (concise, 4–6 steps)
-
-Formatting rules:
-- Use clear section headers.
-- Keep the recipe concise.
-- Do not add disclaimers unless necessary.
-- Do not explain safety risks unless explicitly asked.
-- Return only the recipe.
-
-If the ingredient is not suitable for raw preparation, return exactly:
-"This ingredient is not suitable for raw preparation."
+Return JSON only.
+If unsuitable, return:
+{{
+  "recipe_title": "Unsupported recipe",
+  "short_description": "This ingredient is not suitable for raw preparation.",
+  "key_ingredients": [],
+  "cooking_method": "Not applicable.",
+  "basic_preparation_steps": []
+}}
 """
 
 MEDIUM_RECIPE_PROMPT_TEMPLATE = """You are a culinary assistant specialized in controlled moderate-temperature cooking.
@@ -63,34 +85,36 @@ MEDIUM_RECIPE_PROMPT_TEMPLATE = """You are a culinary assistant specialized in c
 The user provides a single ingredient category:
 {ingredient}
 
-Your task:
+Return exactly one recipe as JSON with this schema:
+{{
+  "recipe_title": "short title",
+  "short_description": "1-2 sentence description",
+  "key_ingredients": ["ingredient 1", "ingredient 2"],
+  "cooking_method": "brief method summary with explicit temperature range",
+  "basic_preparation_steps": ["step 1", "step 2", "step 3"]
+}}
 
-Return exactly 1 recipe suggestion that:
-- Uses the provided ingredient as the primary component.
-- Includes at least one cooking step performed at a temperature >= 70°C and < 110°C.
-- Does NOT include any cooking method exceeding 110°C.
-- Does NOT include frying, grilling, broiling, searing, roasting at high heat, or baking above 110°C.
-- Acceptable techniques include simmering (70–100°C), poaching (70–95°C), steaming (<100°C), sous-vide (70–95°C), controlled low-temperature braising (<110°C), or water-bath cooking.
-- Is realistic and commonly recognized.
-- Is appropriate and safe for human consumption.
+Rules:
+- Use the ingredient as the primary component.
+- Include at least one cooking step at temperature >= 70°C and < 110°C.
+- Do NOT exceed 110°C.
+- Do NOT include frying, grilling, broiling, searing, roasting at high heat, or baking above 110°C.
+- Acceptable techniques: simmering, poaching, steaming, sous-vide, low-temperature braising, water-bath cooking.
+- The recipe must be realistic and commonly recognized.
+- The recipe must be appropriate for human consumption.
+- key_ingredients must contain 4 to 6 items.
+- basic_preparation_steps must contain 3 to 4 concise steps.
+- cooking_method must explicitly mention a temperature between 70°C and 110°C.
 
-Provide:
-
-1. Recipe name
-2. Short description (2–3 sentences)
-3. Key ingredients (bullet list)
-4. Cooking method with explicit temperature range
-5. Basic preparation steps (4–6 concise steps)
-
-Formatting rules:
-- Use clear section headers.
-- Explicitly state the cooking temperature range.
-- Keep the recipe concise.
-- Do not add safety disclaimers unless explicitly requested.
-- Return only the recipe.
-
-If the ingredient is incompatible with cooking within the specified temperature range, return exactly:
-"This ingredient is not suitable for cooking within the specified temperature range."
+Return JSON only.
+If unsuitable, return:
+{{
+  "recipe_title": "Unsupported recipe",
+  "short_description": "This ingredient is not suitable for cooking within the specified temperature range.",
+  "key_ingredients": [],
+  "cooking_method": "Not applicable.",
+  "basic_preparation_steps": []
+}}
 """
 
 HIGH_RECIPE_PROMPT_TEMPLATE = """You are a culinary assistant specialized in high-temperature cooking techniques.
@@ -98,34 +122,36 @@ HIGH_RECIPE_PROMPT_TEMPLATE = """You are a culinary assistant specialized in hig
 The user provides a single ingredient category:
 {ingredient}
 
-Your task:
+Return exactly one recipe as JSON with this schema:
+{{
+  "recipe_title": "short title",
+  "short_description": "1-2 sentence description",
+  "key_ingredients": ["ingredient 1", "ingredient 2"],
+  "cooking_method": "brief method summary with explicit temperature",
+  "basic_preparation_steps": ["step 1", "step 2", "step 3"]
+}}
 
-Return exactly 1 recipe suggestion that:
-- Uses the provided ingredient as the primary component.
-- Includes at least one cooking step performed at a temperature strictly above 115°C.
-- Explicitly mentions the cooking temperature.
-- Uses realistic high-heat culinary techniques such as roasting, baking, frying, grilling, broiling, sautéing, searing, or pressure cooking (>115°C).
-- Does NOT include exclusively low-temperature methods.
-- Is commonly recognized.
-- Is appropriate and safe for human consumption.
+Rules:
+- Use the ingredient as the primary component.
+- Include at least one cooking step strictly above 115°C.
+- Explicitly mention the cooking temperature.
+- Use realistic high-heat techniques such as roasting, baking, frying, grilling, broiling, sauteing, or searing.
+- Do NOT use exclusively low-temperature methods.
+- The recipe must be commonly recognized.
+- The recipe must be appropriate for human consumption.
+- key_ingredients must contain 4 to 6 items.
+- basic_preparation_steps must contain 3 to 4 concise steps.
+- cooking_method must explicitly mention a temperature above 115°C.
 
-Provide:
-
-1. Recipe name
-2. Short description (2–3 sentences)
-3. Key ingredients (bullet list)
-4. Cooking method with explicit temperature indication
-5. Basic preparation steps (4–6 concise steps)
-
-Formatting rules:
-- Use clear section headers.
-- Explicitly state the cooking temperature.
-- Keep the recipe concise.
-- Do not add safety disclaimers unless explicitly requested.
-- Return only the recipe.
-
-If the ingredient is incompatible with cooking above 115°C, return exactly:
-"This ingredient is not suitable for cooking above 115°C."
+Return JSON only.
+If unsuitable, return:
+{{
+  "recipe_title": "Unsupported recipe",
+  "short_description": "This ingredient is not suitable for cooking above 115°C.",
+  "key_ingredients": [],
+  "cooking_method": "Not applicable.",
+  "basic_preparation_steps": []
+}}
 """
 
 
@@ -137,16 +163,16 @@ def _get_env(name: str) -> Optional[str]:
     return value or None
 
 
-def _select_provider(provider: Provider) -> Literal["gemini_api", "vertex"]:
+def _select_provider(provider: Provider) -> ResolvedProvider:
     if provider in ("gemini_api", "vertex"):
         return provider
 
     if _get_env("GEMINI_API_KEY"):
-        logger.info("Auto provider: gemini_api")
+        logger.info("Auto provider selected: gemini_api")
         return "gemini_api"
 
     if _get_env("GOOGLE_CLOUD_PROJECT"):
-        logger.info("Auto provider: vertex")
+        logger.info("Auto provider selected: vertex")
         return "vertex"
 
     raise RuntimeError(
@@ -154,130 +180,272 @@ def _select_provider(provider: Provider) -> Literal["gemini_api", "vertex"]:
     )
 
 
-def _build_text_llm(
+def _build_client(
     *,
-    provider: Literal["gemini_api", "vertex"],
-    model: str,
-    temperature: float,
-    max_output_tokens: int,
-    gemini_api_key: Optional[str] = None,
-    gcp_project: Optional[str] = None,
-    gcp_region: Optional[str] = None,
-) -> ChatGoogleGenerativeAI:
-    if provider == "gemini_api":
-        api_key = (gemini_api_key or _get_env("GEMINI_API_KEY"))
-        if not api_key:
-            raise RuntimeError("GEMINI_API_KEY not set.")
-
-        return ChatGoogleGenerativeAI(
-            model=model,
-            temperature=temperature,
-            max_output_tokens=max_output_tokens,
-            google_api_key=api_key,
-        )
-
-    # Vertex AI mode
-    project = (gcp_project or _get_env("GOOGLE_CLOUD_PROJECT"))
-    if not project:
-        raise RuntimeError("GOOGLE_CLOUD_PROJECT not set.")
-
-    location = (gcp_region or _get_env("GOOGLE_CLOUD_REGION") or "us-central1")
-
-    return ChatGoogleGenerativeAI(
-        model=model,
-        temperature=temperature,
-        max_output_tokens=max_output_tokens,
-        project=project,
-        location=location,
-    )
-
-
-def _build_image_client(
-    *,
-    provider: Literal["gemini_api", "vertex"],
-    image_location: Optional[str] = None,
+    provider: ResolvedProvider,
+    location: Optional[str] = None,
 ) -> genai.Client:
     if provider == "gemini_api":
-        api_key = _get_env("GEMINI_API_KEY")
+        api_key = _get_env("GEMINI_API_KEY") or _get_env("GOOGLE_API_KEY")
         if not api_key:
-            raise RuntimeError("GEMINI_API_KEY not set.")
+            raise RuntimeError("GEMINI_API_KEY or GOOGLE_API_KEY not set.")
         return genai.Client(api_key=api_key)
 
     project = _get_env("GOOGLE_CLOUD_PROJECT")
     if not project:
         raise RuntimeError("GOOGLE_CLOUD_PROJECT not set.")
 
-    # For image generation on Vertex AI, "global" is often the safest default.
-    location = image_location or _get_env("GOOGLE_CLOUD_REGION") or "global"
+    region = location or _get_env("GOOGLE_CLOUD_REGION") or "us-central1"
 
     return genai.Client(
         vertexai=True,
         project=project,
-        location=location,
+        location=region,
     )
 
 
-def _get_prompt(cooking: str) -> ChatPromptTemplate:
+def _get_recipe_prompt(cooking: str) -> str:
     if cooking == "raw":
-        return ChatPromptTemplate.from_template(RAW_RECIPE_PROMPT_TEMPLATE)
+        return RAW_RECIPE_PROMPT_TEMPLATE
     if cooking == "medium":
-        return ChatPromptTemplate.from_template(MEDIUM_RECIPE_PROMPT_TEMPLATE)
+        return MEDIUM_RECIPE_PROMPT_TEMPLATE
     if cooking == "high":
-        return ChatPromptTemplate.from_template(HIGH_RECIPE_PROMPT_TEMPLATE)
+        return HIGH_RECIPE_PROMPT_TEMPLATE
 
-    return ChatPromptTemplate.from_template(
-        "Explain in simple terms that the selected food type or cooking requirements does not belong to a recognized category."
+    raise ValueError(
+        f"Unsupported cooking mode: {cooking!r}. Expected 'raw', 'medium', or 'high'."
     )
 
 
-def _build_image_prompt(recipe_text: str) -> str:
-    return f"""Generate one high-quality appetizing food photograph of the dish described below.
+def _get_finish_reason_name(response: Any) -> Optional[str]:
+    try:
+        if response.candidates:
+            return str(response.candidates[0].finish_reason)
+    except Exception:
+        return None
+    return None
+
+
+def _normalize_str_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _format_recipe_text(recipe: Dict[str, Any]) -> str:
+    return (
+        f"## {recipe['recipe_title']}\n\n"
+        f"{recipe['short_description']}\n\n"
+        f"### Key ingredients\n"
+        f"{recipe['key_ingredients']}\n\n"
+        f"### Cooking method\n"
+        f"{recipe['cooking_method']}\n\n"
+        f"### Basic preparation steps\n"
+        f"{recipe['basic_preparation_steps']}"
+    ).strip()
+
+def _parse_recipe_json(text: str) -> Dict[str, Any]:
+    text = text.strip()
+    if not text:
+        raise RuntimeError("The model returned an empty text response.")
+
+    data = json.loads(text)
+
+    recipe_title = str(data.get("recipe_title", "")).strip() or "Untitled recipe"
+    short_description = str(data.get("short_description", "")).strip()
+    cooking_method = str(data.get("cooking_method", "")).strip()
+
+    ingredients_list = _normalize_str_list(data.get("key_ingredients", []))
+    steps_list = _normalize_str_list(data.get("basic_preparation_steps", []))
+
+    if not short_description:
+        raise RuntimeError("The model returned JSON without short_description.")
+
+    if not cooking_method:
+        raise RuntimeError("The model returned JSON without cooking_method.")
+
+    key_ingredients_md = _format_bullet_list(ingredients_list)
+    steps_md = _format_numbered_list(steps_list)
+
+    recipe = {
+        "recipe_title": recipe_title,
+        "short_description": short_description,
+        "key_ingredients": key_ingredients_md,
+        "cooking_method": cooking_method,
+        "basic_preparation_steps": steps_md,
+    }
+
+    recipe["recipe_text"] = _format_recipe_text(recipe)
+
+    return recipe
+
+
+def _generate_recipe_text_bundle(
+    ingredient: str,
+    cooking: str,
+    *,
+    provider: ResolvedProvider,
+    model: str,
+    temperature: float,
+    max_output_tokens: int,
+    text_location: Optional[str] = None,
+    max_retries: int = 2,
+) -> Dict[str, Any]:
+    client = _build_client(provider=provider, location=text_location)
+    prompt = _get_recipe_prompt(cooking).format(ingredient=ingredient)
+
+    token_limits = [max_output_tokens]
+    for i in range(max_retries):
+        token_limits.append(max_output_tokens + (i + 1) * 400)
+
+    last_text: Optional[str] = None
+    last_finish_reason: Optional[str] = None
+    last_error: Optional[Exception] = None
+
+    for attempt_index, token_limit in enumerate(token_limits, start=1):
+        response = client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=temperature,
+                max_output_tokens=token_limit,
+                response_mime_type="application/json",
+                response_schema={
+                    "type": "OBJECT",
+                    "properties": {
+                        "recipe_title": {"type": "STRING"},
+                        "short_description": {"type": "STRING"},
+                        "key_ingredients": {
+                            "type": "ARRAY",
+                            "items": {"type": "STRING"},
+                        },
+                        "cooking_method": {"type": "STRING"},
+                        "basic_preparation_steps": {
+                            "type": "ARRAY",
+                            "items": {"type": "STRING"},
+                        },
+                    },
+                    "required": [
+                        "recipe_title",
+                        "short_description",
+                        "key_ingredients",
+                        "cooking_method",
+                        "basic_preparation_steps",
+                    ],
+                },
+            ),
+        )
+
+        text = (response.text or "").strip()
+        finish_reason = _get_finish_reason_name(response)
+
+        last_text = text
+        last_finish_reason = finish_reason
+
+        try:
+            parsed = _parse_recipe_json(text)
+            parsed["__finish_reason"] = finish_reason or ""
+            parsed["__attempts"] = attempt_index
+            return parsed
+        except Exception as exc:
+            last_error = exc
+            logger.warning(
+                "Recipe JSON parsing failed on attempt %s/%s (max_output_tokens=%s, finish_reason=%s): %s",
+                attempt_index,
+                len(token_limits),
+                token_limit,
+                finish_reason,
+                exc,
+            )
+
+    raise RuntimeError(
+        "Failed to parse structured recipe JSON after retries. "
+        f"finish_reason={last_finish_reason!r}, raw_text={last_text!r}, error={last_error}"
+    )
+def _format_bullet_list(items: list[str]) -> str:
+    """
+    Convert a list of strings to a Markdown bullet list.
+    """
+    return "\n".join(f"- {item}" for item in items)
+
+
+def _format_numbered_list(items: list[str]) -> str:
+    """
+    Convert a list of strings to a Markdown numbered list.
+    """
+    return "\n".join(f"{i+1}. {item}" for i, item in enumerate(items))
+
+def _build_image_prompt(recipe_title: str, short_description: str) -> str:
+    return f"""Generate one appetizing photorealistic food image for this dish.
+
+Dish title:
+{recipe_title}
+
+Dish description:
+{short_description}
 
 Requirements:
-- Photorealistic food photography
+- Square composition
 - Single plated serving
 - Clean background
 - Natural lighting
-- No text, labels, watermark, or collage
-- Show the finished dish only
-- Make the appearance consistent with the recipe
-
-Recipe:
-{recipe_text}
+- No text, labels, watermark, collage, or packaging
+- Show only the finished dish
+- The appearance must match the title and description
 """
 
 
+def _extract_image_from_response(response: Any) -> Optional[Image.Image]:
+    try:
+        for candidate in response.candidates or []:
+            content = getattr(candidate, "content", None)
+            if not content:
+                continue
+
+            for part in content.parts or []:
+                inline_data = getattr(part, "inline_data", None)
+                if inline_data and getattr(inline_data, "data", None):
+                    image = Image.open(BytesIO(inline_data.data))
+                    image.load()
+                    return image
+    except Exception as exc:
+        logger.warning("Failed to extract image from response: %s", exc)
+
+    return None
+
+
 def _generate_recipe_image(
-    recipe_text: str,
+    recipe_title: str,
+    short_description: str,
     *,
-    provider: Literal["gemini_api", "vertex"],
-    image_model: str = "gemini-2.5-flash-image",
+    provider: ResolvedProvider,
+    image_model: str,
     image_location: Optional[str] = None,
-) -> Optional[Image.Image]:
-    client = _build_image_client(provider=provider, image_location=image_location)
+    output_size: tuple[int, int] = (512, 512),
+) -> Dict[str, Any]:
+    client = _build_client(provider=provider, location=image_location)
 
     response = client.models.generate_content(
         model=image_model,
-        contents=_build_image_prompt(recipe_text),
-        config=GenerateContentConfig(
-            response_modalities=[Modality.TEXT, Modality.IMAGE],
+        contents=_build_image_prompt(recipe_title, short_description),
+        config=types.GenerateContentConfig(
+            response_modalities=["IMAGE"],
+            image_config=types.ImageConfig(
+                aspect_ratio="1:1",
+            ),
         ),
     )
 
-    for candidate in response.candidates or []:
-        content = getattr(candidate, "content", None)
-        if not content:
-            continue
+    image = _extract_image_from_response(response)
+    finish_reason = _get_finish_reason_name(response)
 
-        for part in content.parts or []:
-            inline_data = getattr(part, "inline_data", None)
-            if inline_data and getattr(inline_data, "data", None):
-                image = Image.open(BytesIO(inline_data.data))
-                image.load()  # fully load into memory
-                return image
+    if image is not None and image.size != output_size:
+        image = image.resize(output_size, Image.LANCZOS)
 
-    logger.warning("No image returned by the image generation model.")
-    return None
+    return {
+        "image": image,
+        "finish_reason": finish_reason,
+    }
 
 
 def recipe_suggestion(
@@ -287,67 +455,50 @@ def recipe_suggestion(
     provider: Provider = "auto",
     model: str = "gemini-2.5-flash",
     temperature: float = 0.2,
-    max_output_tokens: int = 800,
+    max_output_tokens: int = 1200,
     image_model: str = "gemini-2.5-flash-image",
+    text_location: Optional[str] = None,
     image_location: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Generate one recipe suggestion and one AI-generated image.
+    if not isinstance(ingredient, str) or not ingredient.strip():
+        raise ValueError("ingredient must be a non-empty string.")
 
-    Returns:
-        dict with:
-        - "recipe_text": str
-        - "image": PIL.Image.Image | None
+    resolved_provider = _select_provider(provider)
 
-    Notes:
-        - The image is kept in memory only.
-        - The returned PIL image can be used directly with Streamlit:
-            st.image(result["image"])
-    """
-    gemini_api_key: Optional[str] = None,
-    gcp_project: Optional[str] = None,
-    gcp_region: Optional[str] = None,
-) -> str:
-
-    selected_provider = _select_provider(provider)
-
-    llm = _build_text_llm(
-        provider=selected_provider,
+    text_bundle = _generate_recipe_text_bundle(
+        ingredient=ingredient.strip(),
+        cooking=cooking,
+        provider=resolved_provider,
         model=model,
         temperature=temperature,
         max_output_tokens=max_output_tokens,
-        gemini_api_key=gemini_api_key,
-        gcp_project=gcp_project,
-        gcp_region=gcp_region,
+        text_location=text_location,
+        max_retries=2,
     )
 
-    prompt = _get_prompt(cooking)
-    chain = prompt | llm | StrOutputParser()
-
-    answer: str = chain.invoke({"ingredient": ingredient})
-    recipe_text = answer.strip()
-
-    image = _generate_recipe_image(
-        recipe_text,
-        provider=selected_provider,
+    image_bundle = _generate_recipe_image(
+        recipe_title=text_bundle["recipe_title"],
+        short_description=text_bundle["short_description"],
+        provider=resolved_provider,
         image_model=image_model,
         image_location=image_location,
+        output_size=(512, 512),
     )
 
     return {
-        "recipe_text": recipe_text,
-        "image": image,
+        "recipe_title": text_bundle["recipe_title"],
+        "short_description": text_bundle["short_description"],
+        "key_ingredients": text_bundle["key_ingredients"],
+        "cooking_method": text_bundle["cooking_method"],
+        "basic_preparation_steps": text_bundle["basic_preparation_steps"],
+        "recipe_text": text_bundle["recipe_text"],
+        "image": image_bundle["image"],
+        "debug": {
+            "provider": resolved_provider,
+            "text_model": model,
+            "image_model": image_model,
+            "text_finish_reason": text_bundle.get("__finish_reason") or None,
+            "image_finish_reason": image_bundle.get("finish_reason"),
+            "text_attempts": text_bundle.get("__attempts", 1),
+        },
     }
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-
-    result = recipe_suggestion(
-        ingredient="beef",
-        cooking="raw",
-        provider="auto",
-    )
-
-    print(result["recipe_text"])
-    print(type(result["image"]))
