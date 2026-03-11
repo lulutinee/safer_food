@@ -13,6 +13,8 @@ tensorflow_hub
 torch
 torchvision
 plotly
+streamlit-toggle
+streamlit-vertical-slider
 
 #Explanation LLM
 langchain

@@ -459,7 +459,7 @@ def recipe_suggestion(
     image_model: str = "gemini-2.5-flash-image",
     text_location: Optional[str] = None,
     image_location: Optional[str] = None,
-        gemini_api_key: Optional[str] = None,
+    gemini_api_key: Optional[str] = None,
     gcp_project: Optional[str] = None,
     gcp_region: Optional[str] = None,
 ) -> Dict[str, Any]:

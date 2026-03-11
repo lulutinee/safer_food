@@ -13,24 +13,22 @@ from keras.applications.efficientnet import EfficientNetB0, preprocess_input
 from PIL import Image
 import plotly.graph_objects as go
 
-GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
-GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
-GOOGLE_GENAI_USE_VERTEXAI = st.secrets['GOOGLE_GENAI_USE_VERTEXAI']
+# GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
+# GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
+# GOOGLE_GENAI_USE_VERTEXAI = st.secrets['GOOGLE_GENAI_USE_VERTEXAI']
 from google.oauth2 import service_account
-service_account = json.loads(st.secrets["GOOGLE_PRIVATE_KEY_JSON"])
+# service_account = json.loads(st.secrets["GOOGLE_PRIVATE_KEY_JSON"])
 
-tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-tmp.write(json.dumps(service_account).encode())
-tmp.close()
+# tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+# tmp.write(json.dumps(service_account).encode())
+# tmp.close()
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
-os.environ["GOOGLE_CLOUD_PROJECT"] = service_account["project_id"]
+# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+# os.environ["GOOGLE_CLOUD_PROJECT"] = service_account["project_id"]
 
 from interface.inference import infer
 from interface import explanations, recipes, bacteria_information
-import thermometer_component
-from thermometer_component import thermometer_slider
-import re
+from  streamlit_vertical_slider import vertical_slider
 
 # -----------------------------
 # Page Config
@@ -278,12 +276,6 @@ FOOD_MODELS = {
     "Pork": {"Tmin": -1, "b": 0.018, "pathogen": "E. coli", "food": "pork"}
 }
 
-PATHOGEN_MODELS = {
-    "E. coli":      {"Tmin": -1.0, "b": 0.018, "N0": 1e1, "Nmax": 1e9},
-    "Listeria":     {"Tmin": -2.0, "b": 0.017, "N0": 1e1, "Nmax": 1e9},
-    "Salmonella":   {"Tmin": -2.0, "b": 0.020, "N0": 1e1, "Nmax": 1e9},
-}
-
 MICROORGANISM = bacteria_information.MICROORGANISM
 # -----------------------------
 # Food-101 Labels
@@ -349,7 +341,7 @@ def risk_from_count(N, organism):
     if N <= raw:
         return "✅Safe", N/high
     if N < medium:
-        return "Safe", N/high
+        return "✅Still Safe", N/high
     elif N < high:
         return "⚠️Caution", N/high
     else:
@@ -395,8 +387,8 @@ def make_gauge(title, N, organism):
     ))
 
     fig.update_layout(
-        height=310,
-        margin=dict(l=20, r=20, t=50, b=10)
+        height=350,
+        margin=dict(l=70, r=20, t=50, b=10)
     )
 
     return fig
@@ -503,51 +495,67 @@ def preprocess_food_image(img_pil):
 # -----------------------------
 # Thermometer slider
 # -----------------------------
-def thermometer_slider(
+def thermometer_display(
     label: str,
+    temperature: float,
     min_value: int = -5,
     max_value: int = 40,
-    value: int = 4,
-    step: int = 1,
     height: int = 360,
-    key: str = "thermo_temp",
-    color: str = "#E14F3D",
 ):
     """
-    Vertical thermometer slider rendered in HTML.
-    User drags mercury level inside thermometer to change value.
-    Returns an int (or float if you change it) back to Streamlit.
+    Display-only thermometer driven by an external temperature value.
+    No dragging / no interaction.
+    Color reflects bacterial risk:
+      cold = lower risk, hot = higher risk
     """
-    # Streamlit component returns a value; we keep state in session_state
-    if key not in st.session_state:
-        st.session_state[key] = value
 
-    # Use the last value as default (so it persists on reruns)
-    value = st.session_state[key]
+    # Clamp temperature to display range
+    value = max(min_value, min(float(temperature), max_value))
+
+    # Fill %
+    fill_percent = ((value - min_value) / (max_value - min_value)) * 100
+
+    # Risk color by temperature
+    if value <= 4:
+        mercury_color = "#3498DB"   # blue = refrigerated / lower risk
+        risk_label = "Low risk"
+    elif value <= 10:
+        mercury_color = "#2ECC71"   # green = cool / moderate-safe
+        risk_label = "Moderate-low risk"
+    elif value <= 20:
+        mercury_color = "#F39C12"   # orange = growth increasing
+        risk_label = "Moderate risk"
+    else:
+        mercury_color = "#E14F3D"   # red = high growth risk
+        risk_label = "High risk"
+
     html = f"""
     <style>
       .thermo-wrap {{
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
         display: flex;
         flex-direction: column;
         gap: 10px;
-        user-select: none;
       }}
+
       .thermo-label {{
         font-size: 20px;
-        font-weight: 600;
+        font-weight: 700;
         color: #fff;
       }}
+
       .thermo-row {{
-        display:flex;
-        align-items:center;
-        gap: 16px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
       }}
+
       .thermo {{
         position: relative;
-        width: 70px;
+        width: 72px;
         height: 300px;
       }}
+
       .tube {{
         position: absolute;
         left: 50%;
@@ -560,11 +568,12 @@ def thermometer_slider(
         background: linear-gradient(180deg, #f7f7f7 0%, #ededed 100%);
         overflow: hidden;
       }}
+
       .bulb {{
         position: absolute;
         left: 50%;
         transform: translateX(-50%);
-        bottom: 0px;
+        bottom: 0;
         width: 54px;
         height: 54px;
         border-radius: 50%;
@@ -572,14 +581,15 @@ def thermometer_slider(
         background: linear-gradient(180deg, #f7f7f7 0%, #eaeaea 100%);
         overflow: hidden;
       }}
+
       .mercury {{
         position: absolute;
         bottom: 0;
         left: 0;
         width: 100%;
-        height: 0%;
-        background: {color};
+        background: {mercury_color};
       }}
+
       .mercury-gloss {{
         position: absolute;
         left: 18%;
@@ -589,51 +599,54 @@ def thermometer_slider(
         border-radius: 99px;
         background: rgba(255,255,255,0.35);
       }}
+
       .bulb .mercury {{
         border-radius: 50%;
       }}
+
       .value-box {{
-        min-width: 90px;
-        font-size: 20px;
+        min-width: 130px;
+        font-size: 24px;
         font-weight: 800;
         color: #fff;
-      }}
-      .hint {{
-        font-size: 12px;
-        color: #666;
-        margin-top: 2px;
+        line-height: 1.2;
       }}
 
-      /* Invisible input overlay to capture drag inside thermometer */
-      .overlay {{
-        position:absolute;
-        left: 50%;
-        transform: translateX(-50%);
-        top: 10px;
-        width: 26px;
-        height: 240px;
-        border-radius: 18px;
-        cursor: ns-resize;
-        background: rgba(0,0,0,0);
+      .risk-box {{
+        font-size: 13px;
+        font-weight: 600;
+        color: {mercury_color};
+        margin-top: 4px;
       }}
 
-      /* Tick marks (optional) */
       .ticks {{
-        position:absolute;
+        position: absolute;
         left: calc(50% + 18px);
         top: 10px;
         height: 240px;
-        width: 16px;
-        display:flex;
+        width: 30px;
+        display: flex;
         flex-direction: column;
         justify-content: space-between;
       }}
+
+      .tick-row {{
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }}
+
       .tick {{
         height: 2px;
-        background: #555;
+        background: #666;
         border-radius: 2px;
         width: 10px;
-        opacity: 0.7;
+        opacity: 0.8;
+      }}
+
+      .tick-label {{
+        font-size: 11px;
+        color: #aaa;
       }}
     </style>
 
@@ -641,133 +654,36 @@ def thermometer_slider(
       <div class="thermo-label">{label}</div>
 
       <div class="thermo-row">
-        <div class="thermo" id="thermo">
+        <div class="thermo">
           <div class="tube">
-            <div class="mercury" id="tubeMercury"></div>
+            <div class="mercury" style="height:{fill_percent}%;"></div>
             <div class="mercury-gloss"></div>
           </div>
 
           <div class="bulb">
-            <div class="mercury" id="bulbMercury"></div>
+            <div class="mercury" style="height:100%;"></div>
             <div class="mercury-gloss"></div>
           </div>
 
-          <div class="overlay" id="dragArea" aria-label="drag temperature"></div>
-
           <div class="ticks">
-            <div class="tick"></div>
-            <div class="tick"></div>
-            <div class="tick"></div>
-            <div class="tick"></div>
-            <div class="tick"></div>
-            <div class="tick"></div>
+            <div class="tick-row"><div class="tick"></div><div class="tick-label">{max_value}°</div></div>
+            <div class="tick-row"><div class="tick"></div><div class="tick-label">30°</div></div>
+            <div class="tick-row"><div class="tick"></div><div class="tick-label">20°</div></div>
+            <div class="tick-row"><div class="tick"></div><div class="tick-label">10°</div></div>
+            <div class="tick-row"><div class="tick"></div><div class="tick-label">4°</div></div>
+            <div class="tick-row"><div class="tick"></div><div class="tick-label">{min_value}°</div></div>
           </div>
         </div>
 
         <div>
-          <div class="value-box"><span id="valText">{value}</span> °C</div>
-          <div class="hint">Drag inside the thermometer</div>
+          <div class="value-box">{value:.1f} °C</div>
+          <div class="risk-box">{risk_label}</div>
         </div>
       </div>
     </div>
-
-    <script>
-      const minV = {min_value};
-      const maxV = {max_value};
-      const step = {step};
-      let value = {value};
-
-      const tubeMercury = document.getElementById("tubeMercury");
-      const bulbMercury = document.getElementById("bulbMercury");
-      const valText = document.getElementById("valText");
-      const dragArea = document.getElementById("dragArea");
-
-      function clamp(x, a, b) {{
-        return Math.max(a, Math.min(b, x));
-      }}
-
-      function snapToStep(v) {{
-        const snapped = Math.round((v - minV) / step) * step + minV;
-        return clamp(snapped, minV, maxV);
-      }}
-
-      function percentFromValue(v) {{
-        return ((v - minV) / (maxV - minV)) * 100;
-      }}
-
-      function setUI(v) {{
-        const pct = percentFromValue(v);
-        tubeMercury.style.height = pct + "%";
-        bulbMercury.style.height = "100%";
-        valText.textContent = v;
-      }}
-
-      function emitValue(v) {{
-        // Streamlit component protocol
-        const out = {{ value: v }};
-        window.parent.postMessage({{
-          isStreamlitMessage: true,
-          type: "streamlit:setComponentValue",
-          value: out
-        }}, "*");
-      }}
-
-      function updateFromClientY(clientY) {{
-        const rect = dragArea.getBoundingClientRect();
-        const y = clamp(clientY, rect.top, rect.bottom);
-        const rel = (rect.bottom - y) / rect.height; // 0 bottom -> 1 top
-        let v = minV + rel * (maxV - minV);
-        v = snapToStep(v);
-        value = v;
-        setUI(value);
-        emitValue(value);
-      }}
-
-      let dragging = false;
-
-      dragArea.addEventListener("mousedown", (e) => {{
-        dragging = true;
-        updateFromClientY(e.clientY);
-      }});
-
-      window.addEventListener("mousemove", (e) => {{
-        if (!dragging) return;
-        updateFromClientY(e.clientY);
-      }});
-
-      window.addEventListener("mouseup", () => {{
-        dragging = false;
-      }});
-
-      // Touch support
-      dragArea.addEventListener("touchstart", (e) => {{
-        dragging = true;
-        updateFromClientY(e.touches[0].clientY);
-      }}, {{passive:true}});
-
-      window.addEventListener("touchmove", (e) => {{
-        if (!dragging) return;
-        updateFromClientY(e.touches[0].clientY);
-      }}, {{passive:true}});
-
-      window.addEventListener("touchend", () => {{
-        dragging = false;
-      }});
-
-      // init UI
-      setUI(value);
-      emitValue(value);
-    </script>
     """
 
-    # Return value from component
-    result = components.html(html, height=height)
-
-    # result comes as dict {"value": x} or None
-    if isinstance(result, dict) and "value" in result:
-        st.session_state[key] = int(result["value"])
-
-    return st.session_state[key]
+    components.html(html, height=height)
 
 # -----------------------------
 # Digital timer
@@ -851,7 +767,7 @@ def make_shelflife_gauge(remaining_hours, max_display_hours=72):
         mode="gauge+number",
         value=value,
         number={"suffix": " h", "font": {"size": 28}},
-        title={"text": f"{title}<br><span style='font-size:13px'>{display_text}</span>"},
+        #title={"text": f"{title}<br><span style='font-size:13px'>{display_text}</span>"},
         gauge={
             "axis": {"range": [0, max_display_hours]},
             "bar": {"color": "#E14F3D"},
@@ -878,100 +794,6 @@ def make_shelflife_gauge(remaining_hours, max_display_hours=72):
     return fig
 
 # -----------------------------
-# Format recipe
-# -----------------------------
-def format_recipe_text(recipe_text):
-    """
-    Accepts recipe_text as either:
-    - a string
-    - a list of strings
-
-    Returns a nicely formatted markdown recipe.
-    """
-
-    # 1) Normalize to a list of clean lines
-    if isinstance(recipe_text, list):
-        lines = [str(x).strip() for x in recipe_text if str(x).strip()]
-    elif isinstance(recipe_text, str):
-        lines = [x.strip() for x in recipe_text.split("\n") if x.strip()]
-    else:
-        return "## 🍽 Recipe\n\nRecipe format not recognized."
-
-    title = ""
-    description = ""
-    body = []
-
-    i = 0
-    while i < len(lines):
-        raw_line = lines[i].strip()
-        line = raw_line.lower()
-
-        # Remove markdown ### for matching
-        normalized = re.sub(r"^#+\s*", "", line).strip()
-
-        # ---------- TITLE ----------
-        if normalized.startswith("recipe name"):
-            # Case 1: "Recipe Name: Chicken"
-            if ":" in raw_line:
-                title = raw_line.split(":", 1)[1].strip()
-            # Case 2: next line contains title
-            elif i + 1 < len(lines):
-                title = lines[i + 1].strip()
-                i += 1
-            i += 1
-            continue
-
-        # ---------- DESCRIPTION ----------
-        if normalized.startswith("short description"):
-            # Case 1: "Short Description: ...."
-            if ":" in raw_line:
-                description = raw_line.split(":", 1)[1].strip()
-            # Case 2: next line contains description
-            elif i + 1 < len(lines):
-                description = lines[i + 1].strip()
-                i += 1
-            i += 1
-            continue
-
-        # ---------- BODY ----------
-        body.append(raw_line)
-        i += 1
-
-    # Fallbacks if title missing
-    if not title:
-        # Try using first non-header line as title
-        for line in lines:
-            test = re.sub(r"^#+\s*", "", line).strip().lower()
-            if not any(
-                test.startswith(x)
-                for x in ["recipe name", "short description", "key ingredients", "cooking method", "basic preparation steps"]
-            ):
-                title = line.strip("*# ").strip()
-                break
-
-    if not title:
-        title = "Recipe"
-
-    # Remove duplicated title/description from body if they slipped through
-    cleaned_body = []
-    for line in body:
-        check = re.sub(r"^#+\s*", "", line).strip()
-        if check == title or check == description:
-            continue
-        cleaned_body.append(line)
-
-    body_text = "\n".join(cleaned_body).strip()
-
-    formatted = f"# 🍽 {title}\n\n"
-
-    if description:
-        formatted += f"*{description}*\n\n"
-
-    formatted += body_text
-
-    return formatted
-
-# -----------------------------
 # Streamlit UI
 # -----------------------------
 
@@ -994,9 +816,10 @@ st.session_state.temperature_value = 4
 st.session_state.default_days = 1
 st.session_state.default_hours = 0
 
-col1, col2, col3, col4  = st.columns([1,1,1,1], vertical_alignment="center")
+col1, col2, col3, col4  = st.columns([2,3,2,3])
 
 with col1:
+    st.markdown("### Food selection")
     if "uploaded_file" not in st.session_state:
         st.session_state.uploaded_file = None
 
@@ -1067,14 +890,31 @@ with col1:
 
 
 with col2:
-    temperature = st.slider(
-        "Storage Temperature",
-        min_value=0,
-        max_value=30,
-        value=4,
-        key="temperature_slider"
-    )
+    st.markdown("### Storage temperature")
+    st.markdown("Drag the slider below to adjust the temperature")
+    col_slider, col_thermometer = st.columns([1,2])
+    with col_slider:
+        temperature = vertical_slider(
+            key="temp_slider",
+            height=250,
+            thumb_shape="circle",
+            step=1,
+            default_value=4,
+            min_value=0,
+            max_value=30,
+            track_color="#E1503D6F",
+            slider_color="#E14F3D",
+            # thumb_color=bar_color,
+            value_always_visible=False,
+        )
 
+    with col_thermometer:
+        thermometer_display(
+            label="",
+            temperature=temperature,
+            min_value=-5,
+            max_value=40
+        )
     # st.write("Selected temperature:", temperature, "°C")
 
 with col3:
@@ -1142,6 +982,7 @@ if st.session_state.prediction_done:
             status = "⚠️ Caution"
     else:
         status = "☠️❌ High risk"
+
     st.markdown(f"## STATUS: {status}")
     # -----------------------------
     # DASHBOARD: Pathogen risk gauges + shelf-life
@@ -1161,29 +1002,29 @@ if st.session_state.prediction_done:
 
     # --- Gauges in 4 columns
     c1, c2, c3, c4 = st.columns(4)
-
+    height = 300
     with c1:
         st.plotly_chart(make_gauge("E. coli", pathogen_counts["ec"], "ec"))
         if p["fig"] is not None:
-            st.plotly_chart(p["fig"]["ec"])
+            st.plotly_chart(p["fig"]["ec"], height=height)
         else:
             st.warning("No figure returned by infer().")
     with c2:
         st.plotly_chart(make_gauge("Listeria", pathogen_counts["lm"], "lm"))
         if p["fig"] is not None:
-            st.plotly_chart(p["fig"]["lm"])
+            st.plotly_chart(p["fig"]["lm"], height=height)
         else:
             st.warning("No figure returned by infer().")
     with c3:
         st.plotly_chart(make_gauge("Salmonella", pathogen_counts["ss"], "ss"))
         if p["fig"] is not None:
-            st.plotly_chart(p["fig"]["ss"])
+            st.plotly_chart(p["fig"]["ss"], height=height)
         else:
             st.warning("No figure returned by infer().")
     with c4:
         st.plotly_chart(make_gauge("Total Count", pathogen_counts["ta"], "ta"))
         if p["fig"] is not None:
-            st.plotly_chart(p["fig"]["ta"])
+            st.plotly_chart(p["fig"]["ta"], height=height)
         else:
             st.warning("No figure returned by infer().")
 
@@ -1200,8 +1041,9 @@ if st.session_state.prediction_done:
     }
 
     if valid_times:
-        max_risk = min(valid_times, key=valid_times.get)   # bacteria that reaches danger first
-        danger_time = valid_times[max_risk]
+        bac = min(valid_times, key=valid_times.get)
+        max_risk = MICROORGANISM.get(bac, {}).get("usual_name")   # bacteria that reaches danger first
+        danger_time = valid_times[bac]
         elapsed_time = st.session_state.prediction["time_hours"]
         remaining_risk = max(0, float(danger_time) - float(elapsed_time))
     else:
@@ -1213,7 +1055,7 @@ if st.session_state.prediction_done:
 
     with g1:
         st.plotly_chart(
-            make_shelflife_gauge(remaining_risk, max_display_hours=72)
+            make_shelflife_gauge(remaining_risk, max_display_hours=danger_time)
         )
 
     with g2:
@@ -1230,50 +1072,66 @@ if st.session_state.prediction_done:
             st.success("✅ Shelf-life is still comfortable.")
         elif remaining_risk > 6:
             st.warning("⚠️ Shelf-life is getting shorter. Use soon.")
+        elif remaining_risk > 0:
+            st.error("❌ Very little time left.")
         else:
-            st.error("❌ Very little safe time remains.")
+            st.error("☠️ This belongs to the trash now.")
 
+    if status != "✅ Safe":
+        explanations = explanations.risk_explanation(p["bacterias"], max_output_tokens=2000)
     # -----------------------------
     # Bacterial growth chart
     # -----------------------------
-    if st.button("What does it mean?"):
-        with st.spinner("Generating detailed explanation..."):
-            explanations = explanations.risk_explanation(p["bacterias"], max_output_tokens=2000)
-
-        st.markdown("### 🧠 AI Detailed Explanation")
-        st.write(explanations)
-
-    st.markdown("## Recipe suggestions")
-    if p["cooking_reco"] == "raw" and p['food'] == "poultry":
-        cooking_choice = ["Quick cooking", "High temperature cooking"]
-    elif p["cooking_reco"] == "raw":
-        cooking_choice = ["Tartare", "Quick cooking", "High temperature cooking"]
-    elif p["cooking_reco"] == "medium":
-        cooking_choice = ["Quick cooking", "High temperature cooking"]
+    if status != "✅ Safe":
+        st.markdown("## Detailed Explanations")
+        if st.button("What does it mean?"):
+            with st.spinner("Generating detailed explanation..."):
+                st.markdown("### 🧠 AI Detailed Explanation")
+                st.write(explanations)
     else:
-        cooking_choice = ["High temperature cooking"]
+        st.markdown("## Recipe suggestions")
+        if p["cooking_reco"] == "raw" and p['food'] == "poultry":
+            cooking_choice = ["Quick cooking", "High temperature cooking"]
+        elif p["cooking_reco"] == "raw":
+            cooking_choice = ["Tartare", "Quick cooking", "High temperature cooking"]
+        elif p["cooking_reco"] == "medium":
+            cooking_choice = ["Quick cooking", "High temperature cooking"]
+        else:
+            cooking_choice = ["High temperature cooking"]
 
-    cooking_dict = {'Tartare': 'raw',
-                   'Quick cooking': 'medium',
-                   'High temperature cooking': 'high'}
+        cooking_dict = {'Tartare': 'raw',
+                    'Quick cooking': 'medium',
+                    'High temperature cooking': 'high'}
 
-    if status == "✅ Safe":
         recipe_cooking = cooking_dict[st.selectbox('What kind of recipes would you like?', options=cooking_choice, width=300)]
         if recipe_cooking == None:
             st.markdown("Please make a choice")
         if st.button("Find recipes"):
             with st.spinner("Looking for yummy recipes"):
                 recipe = recipes.recipe_suggestion(ingredient=p["food"], cooking=recipe_cooking, provider='auto', max_output_tokens=5000)
-            #st.markdown(recipes)
+
             if recipe is not None:
                 recipe_text = recipe["recipe_text"]
                 recipe_image = recipe["image"]
-                formatted_recipe = format_recipe_text(recipe_text)
+                recipe_title = recipe["recipe_title"]
+                short_description = recipe["short_description"]
+                key_ingredients = recipe["key_ingredients"]
+                cooking_method = recipe["cooking_method"]
+                basic_preparation_steps = recipe["basic_preparation_steps"]
 
+                st.markdown(f"## {recipe_title}")
+                st.markdown(short_description)
                 col1, col2 = st.columns([1, 2], vertical_alignment="top")
 
                 with col1:
                     st.image(recipe_image)
 
                 with col2:
-                    st.markdown(formatted_recipe)
+                    st.markdown("### Cooking method")
+                    st.markdown(cooking_method)
+
+                    st.markdown("### Ingredients")
+                    st.markdown(key_ingredients)
+
+                    st.markdown("### Preparation")
+                    st.markdown(basic_preparation_steps)
