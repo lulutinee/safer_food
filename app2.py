@@ -278,12 +278,6 @@ FOOD_MODELS = {
     "Pork": {"Tmin": -1, "b": 0.018, "pathogen": "E. coli", "food": "pork"}
 }
 
-PATHOGEN_MODELS = {
-    "E. coli":      {"Tmin": -1.0, "b": 0.018, "N0": 1e1, "Nmax": 1e9},
-    "Listeria":     {"Tmin": -2.0, "b": 0.017, "N0": 1e1, "Nmax": 1e9},
-    "Salmonella":   {"Tmin": -2.0, "b": 0.020, "N0": 1e1, "Nmax": 1e9},
-}
-
 MICROORGANISM = bacteria_information.MICROORGANISM
 # -----------------------------
 # Food-101 Labels
@@ -878,100 +872,6 @@ def make_shelflife_gauge(remaining_hours, max_display_hours=72):
     return fig
 
 # -----------------------------
-# Format recipe
-# -----------------------------
-def format_recipe_text(recipe_text):
-    """
-    Accepts recipe_text as either:
-    - a string
-    - a list of strings
-
-    Returns a nicely formatted markdown recipe.
-    """
-
-    # 1) Normalize to a list of clean lines
-    if isinstance(recipe_text, list):
-        lines = [str(x).strip() for x in recipe_text if str(x).strip()]
-    elif isinstance(recipe_text, str):
-        lines = [x.strip() for x in recipe_text.split("\n") if x.strip()]
-    else:
-        return "## 🍽 Recipe\n\nRecipe format not recognized."
-
-    title = ""
-    description = ""
-    body = []
-
-    i = 0
-    while i < len(lines):
-        raw_line = lines[i].strip()
-        line = raw_line.lower()
-
-        # Remove markdown ### for matching
-        normalized = re.sub(r"^#+\s*", "", line).strip()
-
-        # ---------- TITLE ----------
-        if normalized.startswith("recipe name"):
-            # Case 1: "Recipe Name: Chicken"
-            if ":" in raw_line:
-                title = raw_line.split(":", 1)[1].strip()
-            # Case 2: next line contains title
-            elif i + 1 < len(lines):
-                title = lines[i + 1].strip()
-                i += 1
-            i += 1
-            continue
-
-        # ---------- DESCRIPTION ----------
-        if normalized.startswith("short description"):
-            # Case 1: "Short Description: ...."
-            if ":" in raw_line:
-                description = raw_line.split(":", 1)[1].strip()
-            # Case 2: next line contains description
-            elif i + 1 < len(lines):
-                description = lines[i + 1].strip()
-                i += 1
-            i += 1
-            continue
-
-        # ---------- BODY ----------
-        body.append(raw_line)
-        i += 1
-
-    # Fallbacks if title missing
-    if not title:
-        # Try using first non-header line as title
-        for line in lines:
-            test = re.sub(r"^#+\s*", "", line).strip().lower()
-            if not any(
-                test.startswith(x)
-                for x in ["recipe name", "short description", "key ingredients", "cooking method", "basic preparation steps"]
-            ):
-                title = line.strip("*# ").strip()
-                break
-
-    if not title:
-        title = "Recipe"
-
-    # Remove duplicated title/description from body if they slipped through
-    cleaned_body = []
-    for line in body:
-        check = re.sub(r"^#+\s*", "", line).strip()
-        if check == title or check == description:
-            continue
-        cleaned_body.append(line)
-
-    body_text = "\n".join(cleaned_body).strip()
-
-    formatted = f"# 🍽 {title}\n\n"
-
-    if description:
-        formatted += f"*{description}*\n\n"
-
-    formatted += body_text
-
-    return formatted
-
-# -----------------------------
 # Streamlit UI
 # -----------------------------
 
@@ -1142,6 +1042,10 @@ if st.session_state.prediction_done:
             status = "⚠️ Caution"
     else:
         status = "☠️❌ High risk"
+
+    if status != "✅ Safe":
+        explanations = explanations.risk_explanation(p["bacterias"], max_output_tokens=2000)
+        
     st.markdown(f"## STATUS: {status}")
     # -----------------------------
     # DASHBOARD: Pathogen risk gauges + shelf-life
@@ -1231,7 +1135,7 @@ if st.session_state.prediction_done:
         elif remaining_risk > 6:
             st.warning("⚠️ Shelf-life is getting shorter. Use soon.")
         else:
-            st.error("❌ Very little safe time remains.")
+            st.error("❌ This belongs to the trash now.")
 
     # -----------------------------
     # Bacterial growth chart
@@ -1239,10 +1143,8 @@ if st.session_state.prediction_done:
     if status != "✅ Safe":
         if st.button("What does it mean?"):
             with st.spinner("Generating detailed explanation..."):
-                explanations = explanations.risk_explanation(p["bacterias"], max_output_tokens=2000)
-
-            st.markdown("### 🧠 AI Detailed Explanation")
-            st.write(explanations)
+                st.markdown("### 🧠 AI Detailed Explanation")
+                st.write(explanations)
     else:
         st.markdown("## Recipe suggestions")
         if p["cooking_reco"] == "raw" and p['food'] == "poultry":
@@ -1268,7 +1170,6 @@ if st.session_state.prediction_done:
             if recipe is not None:
                 recipe_text = recipe["recipe_text"]
                 recipe_image = recipe["image"]
-                formatted_recipe = format_recipe_text(recipe_text)
                 recipe_title = recipe["recipe_title"]
                 short_description = recipe["short_description"]
                 key_ingredients = recipe["key_ingredients"]
