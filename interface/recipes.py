@@ -459,15 +459,16 @@ def recipe_suggestion(
     image_model: str = "gemini-2.5-flash-image",
     text_location: Optional[str] = None,
     image_location: Optional[str] = None,
+        gemini_api_key: Optional[str] = None,
+    gcp_project: Optional[str] = None,
+    gcp_region: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not isinstance(ingredient, str) or not ingredient.strip():
         raise ValueError("ingredient must be a non-empty string.")
-    gemini_api_key: Optional[str] = None,
-    gcp_project: Optional[str] = None,
-    gcp_region: Optional[str] = None,
-    ) -> Dict[str, Any]:
+
     """
     Generate one recipe suggestion and one AI-generated image.
+    """
 
     resolved_provider = _select_provider(provider)
 
