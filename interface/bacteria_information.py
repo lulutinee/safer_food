@@ -29,7 +29,7 @@ MICROORGANISM = {
         'usual_name': 'Listeria monocytogenes',
         'initial': -1.4,
         'raw': 1,
-        'medium': 3,
+        'medium': 2.5,
         'high': 4
     },
     'ss': {
