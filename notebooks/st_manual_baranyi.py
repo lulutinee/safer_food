@@ -208,7 +208,12 @@ def set_reference_params_in_session(reference_df: pd.DataFrame) -> None:
         Complete reference dataframe containing one row per
         MatrixID x OrganismID x Temperature.
     """
+    print(f'{reference_df=}')
+    print(f'{reference_df.columns=}')
+
     for row in reference_df.itertuples(index=False):
+        print(f'{row=}')
+        print(f'{type(row)=}')
         lag_key = _state_key(row.MatrixID, row.OrganismID, row.Temperature, "Lag")
         rate_key = _state_key(row.MatrixID, row.OrganismID, row.Temperature, "Maximum Rate")
 
