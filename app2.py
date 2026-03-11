@@ -1045,7 +1045,7 @@ if st.session_state.prediction_done:
 
     if status != "✅ Safe":
         explanations = explanations.risk_explanation(p["bacterias"], max_output_tokens=2000)
-        
+
     st.markdown(f"## STATUS: {status}")
     # -----------------------------
     # DASHBOARD: Pathogen risk gauges + shelf-life
@@ -1104,8 +1104,9 @@ if st.session_state.prediction_done:
     }
 
     if valid_times:
-        max_risk = min(valid_times, key=valid_times.get)   # bacteria that reaches danger first
-        danger_time = valid_times[max_risk]
+        bac = min(valid_times, key=valid_times.get)
+        max_risk = MICROORGANISM.get(bac, {}).get("usual_name")   # bacteria that reaches danger first
+        danger_time = valid_times[bac]
         elapsed_time = st.session_state.prediction["time_hours"]
         remaining_risk = max(0, float(danger_time) - float(elapsed_time))
     else:
@@ -1141,6 +1142,7 @@ if st.session_state.prediction_done:
     # Bacterial growth chart
     # -----------------------------
     if status != "✅ Safe":
+        st.markdown("## Detailed Explanations")
         if st.button("What does it mean?"):
             with st.spinner("Generating detailed explanation..."):
                 st.markdown("### 🧠 AI Detailed Explanation")
