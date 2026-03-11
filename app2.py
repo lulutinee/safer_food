@@ -341,7 +341,7 @@ def risk_from_count(N, organism):
     if N <= raw:
         return "✅Safe", N/high
     if N < medium:
-        return "✅Safe", N/high
+        return "✅Still Safe", N/high
     elif N < high:
         return "⚠️Caution", N/high
     else:
@@ -983,9 +983,6 @@ if st.session_state.prediction_done:
     else:
         status = "☠️❌ High risk"
 
-    if status != "✅ Safe":
-        explanations = explanations.risk_explanation(p["bacterias"], max_output_tokens=2000)
-
     st.markdown(f"## STATUS: {status}")
     # -----------------------------
     # DASHBOARD: Pathogen risk gauges + shelf-life
@@ -1005,29 +1002,29 @@ if st.session_state.prediction_done:
 
     # --- Gauges in 4 columns
     c1, c2, c3, c4 = st.columns(4)
-
+    height = 300
     with c1:
         st.plotly_chart(make_gauge("E. coli", pathogen_counts["ec"], "ec"))
         if p["fig"] is not None:
-            st.plotly_chart(p["fig"]["ec"], height=300)
+            st.plotly_chart(p["fig"]["ec"], height=height)
         else:
             st.warning("No figure returned by infer().")
     with c2:
         st.plotly_chart(make_gauge("Listeria", pathogen_counts["lm"], "lm"))
         if p["fig"] is not None:
-            st.plotly_chart(p["fig"]["lm"], height=300)
+            st.plotly_chart(p["fig"]["lm"], height=height)
         else:
             st.warning("No figure returned by infer().")
     with c3:
         st.plotly_chart(make_gauge("Salmonella", pathogen_counts["ss"], "ss"))
         if p["fig"] is not None:
-            st.plotly_chart(p["fig"]["ss"], height=300)
+            st.plotly_chart(p["fig"]["ss"], height=height)
         else:
             st.warning("No figure returned by infer().")
     with c4:
         st.plotly_chart(make_gauge("Total Count", pathogen_counts["ta"], "ta"))
         if p["fig"] is not None:
-            st.plotly_chart(p["fig"]["ta"], height=300)
+            st.plotly_chart(p["fig"]["ta"], height=height)
         else:
             st.warning("No figure returned by infer().")
 
@@ -1075,9 +1072,13 @@ if st.session_state.prediction_done:
             st.success("✅ Shelf-life is still comfortable.")
         elif remaining_risk > 6:
             st.warning("⚠️ Shelf-life is getting shorter. Use soon.")
+        elif remaining_risk > 0:
+            st.error("❌ Very little time left.")
         else:
-            st.error("❌ This belongs to the trash now.")
+            st.error("☠️ This belongs to the trash now.")
 
+    if status != "✅ Safe":
+        explanations = explanations.risk_explanation(p["bacterias"], max_output_tokens=2000)
     # -----------------------------
     # Bacterial growth chart
     # -----------------------------
