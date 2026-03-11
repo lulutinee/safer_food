@@ -28,28 +28,28 @@ MICROORGANISM = {
     'lm': {
         'usual_name': 'Listeria monocytogenes',
         'initial': -1.4,
-        'raw': 4,
-        'medium': 4,
+        'raw': 1,
+        'medium': 3,
         'high': 4
     },
     'ss': {
         'usual_name': 'Salmonella enterica',
         'initial': -1.4,
-        'raw': 1,
-        'medium': 1,
+        'raw': 0.2,
+        'medium': 0.7,
         'high': 1
     },
     'ec': {
         'usual_name': 'Escherichia coli',
         'initial': -3,
-        'raw': -2,
-        'medium': -2,
+        'raw': -2.7,
+        'medium': -2.3,
         'high': -2
     },
     'ta': {
         'usual_name': 'Total bacteria (aerobic mesophilic)',
         'initial': 4,
-        'raw': 7,
+        'raw': 6,
         'medium': 8,
         'high': 9
     }
