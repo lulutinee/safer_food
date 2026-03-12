@@ -1076,12 +1076,10 @@ if st.session_state.prediction_done:
             st.error("❌ Very little time left.")
         else:
             st.error("☠️ This belongs to the trash now.")
-
-    if status != "✅ Safe":
-        explanations = explanations.risk_explanation(p["bacterias"], max_output_tokens=2000)
     # -----------------------------
     # Bacterial growth chart
     # -----------------------------
+    explanations = explanations.risk_explanation(p["bacterias"], max_output_tokens=2000)
     if status != "✅ Safe":
         st.markdown("## Detailed Explanations")
         if st.button("What does it mean?"):
