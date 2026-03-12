@@ -18,7 +18,7 @@ def _validate_inputs(
     Parameters
     ----------
     times : sequence of int or float
-        Storage times associated with prediction values.
+        Storage times in hours associated with prediction values.
 
     predictions : dict[str, sequence of int or float]
         Dictionary mapping each bacterium key to its sequence of predicted
@@ -136,32 +136,6 @@ def _add_risk_zones(
     - yellow : raw to medium
     - orange : medium to high
     - red    : high to y-axis maximum
-
-    Parameters
-    ----------
-    fig : plotly.graph_objects.Figure
-        Figure to enrich with horizontal colored bands.
-
-    x0 : float
-        Left bound of the x range.
-
-    x1 : float
-        Right bound of the x range.
-
-    y_axis_min : int
-        Lower bound of the shared y-axis.
-
-    y_axis_max : int
-        Upper bound of the shared y-axis.
-
-    raw_thr : float
-        Lower risk threshold.
-
-    med_thr : float
-        Medium risk threshold.
-
-    high_thr : float
-        High risk threshold.
     """
     fig.add_hrect(
         y0=y_axis_min,
@@ -218,16 +192,13 @@ def _add_storage_time_marker(
     """
     Add a vertical red line indicating the storage time.
 
-    The marker spans the full height of the chart, from the shared y-axis
-    minimum to the shared y-axis maximum.
-
     Parameters
     ----------
     fig : plotly.graph_objects.Figure
         Figure to enrich with the storage-time marker.
 
     storage_time : float
-        Storage time to display on the x-axis.
+        Storage time to display on the x-axis, in hours.
 
     y_axis_min : int
         Lower bound of the shared y-axis.
@@ -244,6 +215,38 @@ def _add_storage_time_marker(
         line=dict(color="red", width=3),
         layer="above",
     )
+
+
+def _build_day_axis_ticks(x0: float, x1: float) -> tuple[list[float], list[str]]:
+    """
+    Build tick positions in hours and labels in days for the top x-axis.
+
+    Parameters
+    ----------
+    x0 : float
+        Minimum x value in hours.
+
+    x1 : float
+        Maximum x value in hours.
+
+    Returns
+    -------
+    tuple[list[float], list[str]]
+        Tick positions expressed in hours, and corresponding labels in days.
+    """
+    start_day = int(np.ceil(x0 / 24))
+    end_day = int(np.floor(x1 / 24))
+
+    if start_day > end_day:
+        tickvals = [x0] if x0 == x1 else [x0, x1]
+        ticktext = [f"{val / 24:.1f}" for val in tickvals]
+        return tickvals, ticktext
+
+    day_values = np.arange(start_day, end_day + 1)
+    tickvals = (day_values * 24).astype(float).tolist()
+    ticktext = [str(int(day)) for day in day_values]
+
+    return tickvals, ticktext
 
 
 def plot_predictions_over_time(
@@ -263,7 +266,9 @@ def plot_predictions_over_time(
     - the growth curve for the corresponding bacterium only;
     - the four colored horizontal risk zones associated with that bacterium;
     - the same shared y-axis span across all figures;
-    - optionally, a vertical red line marking a provided storage time.
+    - optionally, a vertical red line marking a provided storage time;
+    - a primary x-axis in hours (bottom);
+    - a secondary x-axis in days (top).
 
     The y-axis span is intentionally shared across all generated figures to keep
     visual comparisons consistent:
@@ -280,16 +285,15 @@ def plot_predictions_over_time(
 
     predictions : dict[str, sequence of int or float]
         Dictionary mapping each bacterium key to a sequence of predicted
-        microbial loads (for example in log cfu total) at the corresponding
-        time points.
+        microbial loads at the corresponding time points.
 
     line_width : int, default=5
         Width of the growth curve line in each individual figure.
 
     storage_time : float or None, default=None
-        Optional storage duration to highlight on every figure. When provided,
-        a vertical red line is drawn at `x = storage_time`, spanning the full
-        height of the plot.
+        Optional storage duration in hours to highlight on every figure. When
+        provided, a vertical red line is drawn at `x = storage_time`, spanning
+        the full height of the plot.
 
     Returns
     -------
@@ -303,22 +307,9 @@ def plot_predictions_over_time(
     ValueError
         If inputs are empty, if a bacterium is unknown, if thresholds are
         missing, or if a prediction series length does not match `times`.
-
-    Notes
-    -----
-    This function assumes that `MICROORGANISM[bacteria]` contains the threshold
-    entries:
-    - ``raw``
-    - ``medium``
-    - ``high``
-
-    Example
-    -------
-    >>> figures = plot_predictions_over_time(times, predictions, storage_time=48.0)
-    >>> fig_lm = figures["lm"]
-    >>> fig_ec = figures["ec"]
     """
     x, x0, x1, y_axis_min, y_axis_max = _validate_inputs(times, predictions)
+    day_tickvals, day_ticktext = _build_day_axis_ticks(x0, x1)
 
     figures: Dict[str, go.Figure] = {}
 
@@ -355,23 +346,49 @@ def plot_predictions_over_time(
                 name=str(bacteria),
                 line=dict(width=line_width),
                 showlegend=False,
+                hovertemplate=(
+                    "t = %{x:.2f} h (%{customdata:.2f} d)"
+                    "<br>load = %{y:.2f} log cfu"
+                    "<extra></extra>"
+                ),
+                customdata=x / 24.0,
             )
         )
 
-        fig.update_yaxes(range=[y_axis_min, y_axis_max])
-
-        fig.update_yaxes(range=[y_axis_min, y_axis_max])
-        fig.update_xaxes(range=[x0, x1], constrain="domain")
+        fig.update_xaxes(
+            range=[x0, x1],
+            constrain="domain",
+        )
+        fig.update_yaxes(
+            range=[y_axis_min, y_axis_max],
+        )
 
         fig.update_layout(
-            xaxis_title="storage time (h)",
-            yaxis_title="Microbial load (log cfu total)",
+            xaxis=dict(
+                title="Storage time (hours)",
+                side="bottom",
+                ticks="outside",
+                showgrid=True,
+            ),
+            xaxis2=dict(
+                title="Storage time (days)",
+                overlaying="x",
+                side="top",
+                tickmode="array",
+                tickvals=day_tickvals,
+                ticktext=day_ticktext,
+                ticks="outside",
+                showgrid=False,
+            ),
+            yaxis=dict(
+                title="Microbial load (log cfu total)",
+            ),
             showlegend=False,
             template="plotly_dark",
             paper_bgcolor="#2C2A29",
             plot_bgcolor="#2C2A29",
             font=dict(color="white"),
-            margin=dict(l=10, r=10, t=10, b=10),
+            margin=dict(l=10, r=10, t=60, b=60),
         )
 
         figures[bacteria] = fig

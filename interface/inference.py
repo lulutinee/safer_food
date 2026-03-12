@@ -201,6 +201,9 @@ def infer(params: Mapping[str, Union[str, float, int]]) -> Dict[str, Any]:
         arrhenius_parameters,
     )
 
+    # print(f'{arrhenius_parameters=}')
+    # print(f'{organism_secondary_params=}')
+
     # Predict growth curves up to requested time
     predictions = predict_for_all_organisms(
         temperature=temperature,
@@ -237,6 +240,7 @@ def infer(params: Mapping[str, Union[str, float, int]]) -> Dict[str, Any]:
         extended_predictions,
         storage_time=params.get('time')
     )
+    # fig = None
 
     result = {
         "is_safe": is_safe,

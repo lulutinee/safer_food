@@ -157,6 +157,8 @@ def _baranyi_model_reparam(
         (np.exp(-mu_max * t_) + q0) / (1.0 + q0)
     )
 
+    # print(f'classical_models.py: {y0=}, {mu_max=}, {A=}, {ymax=}')
+
     y_ = y0 + mu_max * A - np.log(
         1.0 + (np.exp(mu_max * A) - 1.0) / np.exp(ymax - y0)
     )
