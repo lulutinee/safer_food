@@ -53,9 +53,11 @@ For EACH microorganism, write exactly:
 Formatting rules:
 - Use the microorganism name as a header line.
 - Keep each microorganism section compact.
+- Within each microorganism section use markdown-formatted bullet points
 - If the list is empty or None, return:
   "No microorganisms detected above infectious dose based on the provided list."
 """
+ 
 
 
 def _normalize_microorganisms(microorganisms: Optional[Sequence[str]]) -> List[str]:
