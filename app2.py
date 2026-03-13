@@ -13,18 +13,18 @@ from keras.applications.efficientnet import EfficientNetB0, preprocess_input
 from PIL import Image
 import plotly.graph_objects as go
 
-GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
-GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
-GOOGLE_GENAI_USE_VERTEXAI = st.secrets['GOOGLE_GENAI_USE_VERTEXAI']
+# GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
+# GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
+# GOOGLE_GENAI_USE_VERTEXAI = st.secrets['GOOGLE_GENAI_USE_VERTEXAI']
 from google.oauth2 import service_account
-service_account = json.loads(st.secrets["GOOGLE_PRIVATE_KEY_JSON"])
+# service_account = json.loads(st.secrets["GOOGLE_PRIVATE_KEY_JSON"])
 
-tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-tmp.write(json.dumps(service_account).encode())
-tmp.close()
+# tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+# tmp.write(json.dumps(service_account).encode())
+# tmp.close()
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
-os.environ["GOOGLE_CLOUD_PROJECT"] = service_account["project_id"]
+# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+# os.environ["GOOGLE_CLOUD_PROJECT"] = service_account["project_id"]
 
 from interface.inference import infer
 from interface import explanations, recipes, bacteria_information
@@ -393,74 +393,52 @@ def make_gauge(title, N, organism):
 
     return fig
 
-def make_log_cfu_gauge(title, N, organism):
+def make_cfu_gauge(title, N, organism):
     """
-    Gauge uses log scale internally, but displays CFU/g labels.
-
-    Parameters
-    ----------
-    N : float
-        Predicted concentration in log CFU/g
-    organism : str
-        MICROORGANISM key
+    Gauge where N is already in log CFU/g.
+    Axis goes from 0 to thresholds['high'].
     """
 
     thresholds = MICROORGANISM[organism]
 
-    raw = thresholds["raw"]
-    medium = thresholds["medium"]
-    high = thresholds["high"]
+    raw = 10**thresholds["raw"]
+    medium = 10** thresholds["medium"]
+    high = 10**thresholds["high"]
 
-    status, _ = risk_from_count(N, organism)
+    # N is already log CFU/g
+    value = max(0, min(10**N, high))  # clamp to gauge range
 
-    # clamp only for display
-    gauge_value = max(0, min(N, high))
+    status, _ = risk_from_count(10**N, organism)
 
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
-        value=gauge_value,
-        number={
-            "suffix": " log CFU/g",
-            "font": {"size": 24}
-        },
+        value=value,
+        number={"suffix": " CFU"},
         title={
-            "text": (
-                f"{title}<br>"
-                f"<span style='font-size:12px'>"
-                f"{thresholds['usual_name']} • {status}<br>"
-                f"Pred: {10**N:.2e} CFU/g"
-                f"</span>"
-            )
+            "text": f"{title}<br><span style='font-size:22px'>{status}</span>"
         },
         gauge={
-            "axis": {
-                "range": [0, high],
-                "tickmode": "array",
-                "tickvals": list(range(0, int(high) + 1)),
-                "ticktext": [f"1e{i}" for i in range(0, int(high) + 1)]
-            },
+            "axis": {"range": [0,high]},
             "steps": [
-                {"range": [0, raw], "color": "#E8F8F5"},
-                {"range": [raw, medium], "color": "#FCF3CF"},
-                {"range": [medium, high], "color": "#F5B7B1"},
+                {"range": [0, raw], "color": "#E8F8F5"},       # safe
+                {"range": [raw, medium], "color": "#FCF3CF"}, # caution
+                {"range": [medium, high], "color": "#F5B7B1"} # high risk
             ],
             "threshold": {
                 "line": {"color": "#E14F3D", "width": 4},
                 "thickness": 0.8,
-                "value": gauge_value
-            },
-            "bar": {"color": "#2C2A29"}
+                "value": value
+            }
         }
     ))
 
     fig.update_layout(
-        height=280,
-        margin=dict(l=20, r=20, t=60, b=20),
-        paper_bgcolor="rgba(0,0,0,0)",
-        font={"color": "white"}
+        height=350,
+        margin=dict(l=70, r=20, t=50, b=10)
     )
 
     return fig
+
 # Map AI label to microbial category
 def map_food_category(label):
     label = label.lower()
@@ -1004,7 +982,7 @@ if st.session_state.prediction_done:
     c1, c2, c3, c4 = st.columns(4)
     height = 400
     with c1:
-        st.plotly_chart(make_gauge("E. coli", pathogen_counts["ec"], "ec"))
+        st.plotly_chart(make_cfu_gauge("E. coli", pathogen_counts["ec"], "ec"))
         # if p["fig"] is not None:
         #     st.plotly_chart(p["fig"]["ec"], height=height)
         # else:
