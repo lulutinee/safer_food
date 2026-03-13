@@ -794,7 +794,7 @@ st.session_state.temperature_value = 4
 st.session_state.default_days = 1
 st.session_state.default_hours = 0
 
-col1, col2, col3, col4  = st.columns([2,3,2,2])
+col1, col2, col3, col4  = st.columns([2,3,3,2])
 
 with col1:
     st.markdown("### Food selection")
