@@ -870,7 +870,7 @@ with col1:
                     food_img = FOOD101_LABELS[top_index]
                     food = map_food_category(food_img)
                     confidence = preds[0][top_index]
-                    st.success(f"Detected dish: {food_img}")
+                    st.success(f"Detected dish: {food}")
 
 
     else:
@@ -1002,31 +1002,31 @@ if st.session_state.prediction_done:
 
     # --- Gauges in 4 columns
     c1, c2, c3, c4 = st.columns(4)
-    height = 300
+    height = 400
     with c1:
         st.plotly_chart(make_gauge("E. coli", pathogen_counts["ec"], "ec"))
-        if p["fig"] is not None:
-            st.plotly_chart(p["fig"]["ec"], height=height)
-        else:
-            st.warning("No figure returned by infer().")
+        # if p["fig"] is not None:
+        #     st.plotly_chart(p["fig"]["ec"], height=height)
+        # else:
+        #     st.warning("No figure returned by infer().")
     with c2:
         st.plotly_chart(make_gauge("Listeria", pathogen_counts["lm"], "lm"))
-        if p["fig"] is not None:
-            st.plotly_chart(p["fig"]["lm"], height=height)
-        else:
-            st.warning("No figure returned by infer().")
+        # if p["fig"] is not None:
+        #     st.plotly_chart(p["fig"]["lm"], height=height)
+        # else:
+        #     st.warning("No figure returned by infer().")
     with c3:
         st.plotly_chart(make_gauge("Salmonella", pathogen_counts["ss"], "ss"))
-        if p["fig"] is not None:
-            st.plotly_chart(p["fig"]["ss"], height=height)
-        else:
-            st.warning("No figure returned by infer().")
+        # if p["fig"] is not None:
+        #     st.plotly_chart(p["fig"]["ss"], height=height)
+        # else:
+        #     st.warning("No figure returned by infer().")
     with c4:
         st.plotly_chart(make_gauge("Total Count", pathogen_counts["ta"], "ta"))
-        if p["fig"] is not None:
-            st.plotly_chart(p["fig"]["ta"], height=height)
-        else:
-            st.warning("No figure returned by infer().")
+        # if p["fig"] is not None:
+        #     st.plotly_chart(p["fig"]["ta"], height=height)
+        # else:
+        #     st.warning("No figure returned by infer().")
 
     # -----------------------------
     # Remaining shelf-life section
@@ -1088,25 +1088,25 @@ if st.session_state.prediction_done:
                 st.write(explanations)
     else:
         st.markdown("## Recipe suggestions")
-        if p["cooking_reco"] == "raw" and p['food'] == "poultry":
-            cooking_choice = ["Quick cooking", "High temperature cooking"]
-        elif p["cooking_reco"] == "raw":
-            cooking_choice = ["Tartare", "Quick cooking", "High temperature cooking"]
-        elif p["cooking_reco"] == "medium":
-            cooking_choice = ["Quick cooking", "High temperature cooking"]
-        else:
-            cooking_choice = ["High temperature cooking"]
+        # if p["cooking_reco"] == "raw" and p['food'] == "poultry":
+        #     cooking_choice = ["Quick cooking", "High temperature cooking"]
+        # elif p["cooking_reco"] == "raw":
+        #     cooking_choice = ["Tartare", "Quick cooking", "High temperature cooking"]
+        # elif p["cooking_reco"] == "medium":
+        #     cooking_choice = ["Quick cooking", "High temperature cooking"]
+        # else:
+        #     cooking_choice = ["High temperature cooking"]
 
-        cooking_dict = {'Tartare': 'raw',
-                    'Quick cooking': 'medium',
-                    'High temperature cooking': 'high'}
+        # cooking_dict = {'Tartare': 'raw',
+        #             'Quick cooking': 'medium',
+        #             'High temperature cooking': 'high'}
 
-        recipe_cooking = cooking_dict[st.selectbox('What kind of recipes would you like?', options=cooking_choice, width=300)]
-        if recipe_cooking == None:
-            st.markdown("Please make a choice")
+        # recipe_cooking = cooking_dict[st.selectbox('What kind of recipes would you like?', options=cooking_choice, width=300)]
+        # if recipe_cooking == None:
+            # st.markdown("Please make a choice")
         if st.button("Find recipes"):
             with st.spinner("Looking for yummy recipes"):
-                recipe = recipes.recipe_suggestion(ingredient=p["food"], cooking=recipe_cooking, provider='auto', max_output_tokens=5000)
+                recipe = recipes.recipe_suggestion(ingredient=p["food"], cooking="high", provider='auto', max_output_tokens=5000)
 
             if recipe is not None:
                 recipe_text = recipe["recipe_text"]
