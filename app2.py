@@ -13,18 +13,18 @@ from keras.applications.efficientnet import EfficientNetB0, preprocess_input
 from PIL import Image
 import plotly.graph_objects as go
 
-# GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
-# GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
-# GOOGLE_GENAI_USE_VERTEXAI = st.secrets['GOOGLE_GENAI_USE_VERTEXAI']
+GOOGLE_CLOUD_PROJECT = st.secrets['GOOGLE_CLOUD_PROJECT']
+GOOGLE_CLOUD_LOCATION = st.secrets['GOOGLE_CLOUD_LOCATION']
+GOOGLE_GENAI_USE_VERTEXAI = st.secrets['GOOGLE_GENAI_USE_VERTEXAI']
 from google.oauth2 import service_account
-# service_account = json.loads(st.secrets["GOOGLE_PRIVATE_KEY_JSON"])
+service_account = json.loads(st.secrets["GOOGLE_PRIVATE_KEY_JSON"])
 
-# tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-# tmp.write(json.dumps(service_account).encode())
-# tmp.close()
+tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+tmp.write(json.dumps(service_account).encode())
+tmp.close()
 
-# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
-# os.environ["GOOGLE_CLOUD_PROJECT"] = service_account["project_id"]
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+os.environ["GOOGLE_CLOUD_PROJECT"] = service_account["project_id"]
 
 from interface.inference import infer
 from interface import explanations, recipes, bacteria_information
