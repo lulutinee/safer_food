@@ -408,7 +408,7 @@ def make_cfu_gauge(title, N, organism):
     # N is already log CFU/g
     value = max(0, min(10**N, high))  # clamp to gauge range
 
-    status, _ = risk_from_count(10**N, organism)
+    status, _ = risk_from_count(N, organism)
 
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
